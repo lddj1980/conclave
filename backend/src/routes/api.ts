@@ -17,8 +17,10 @@ import { createSandbox } from '../engine/sandbox.js';
 import { createAgentToken, hashAgentToken, computeTokenExpiry } from '../security/agent-token.js';
 import { validateGameProposal } from '../engine/proposal-validation.js';
 import { runOfficialBenchmark } from '../engine/official-benchmark.js';
+import { rateLimiter } from '../middleware/rate-limiter.js';
 
 const router = Router();
+const sensitiveLimiter = rateLimiter(60, 60000);
 
 // Agents
 router.get('/agents', async (req: Request, res: Response) => {
@@ -46,7 +48,7 @@ router.get('/agents', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/agents', async (req: Request, res: Response) => {
+router.post('/agents', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { name, owner, description, subscriptions } = req.body;
     const isHumanRaw = req.body?.isHuman;
@@ -102,7 +104,7 @@ router.post('/agents', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/agents/:id/token/rotate', async (req: Request, res: Response) => {
+router.post('/agents/:id/token/rotate', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const agent = await prisma.agent.findUnique({ where: { id } });
@@ -129,7 +131,7 @@ router.post('/agents/:id/token/rotate', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/agents/:id/subscriptions', async (req: Request, res: Response) => {
+router.post('/agents/:id/subscriptions', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const gameKeysRaw = req.body?.gameKeys ?? req.body?.gameKey;
@@ -164,7 +166,7 @@ router.post('/agents/:id/subscriptions', async (req: Request, res: Response) => 
   }
 });
 
-router.post('/agents/:id/profile', async (req: Request, res: Response) => {
+router.post('/agents/:id/profile', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { mood, achievements, pride, customBio } = req.body;
@@ -260,7 +262,7 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/matches', async (req: Request, res: Response) => {
+router.post('/matches', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { createdBy, totalRounds, gameType, matchSeed, engineVersion, rulesVersion } = req.body;
     const gType = gameType || 'prisoners_dilemma';
@@ -296,7 +298,7 @@ router.post('/matches', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/matches/:id/join', async (req: Request, res: Response) => {
+router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { agentId, agentVersion } = req.body;
@@ -373,7 +375,7 @@ router.post('/matches/:id/join', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/matches/:id/start', async (req: Request, res: Response) => {
+router.post('/matches/:id/start', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -475,7 +477,7 @@ router.get('/matches/:id/verify', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/matches/:id/actions', async (req: Request, res: Response) => {
+router.post('/matches/:id/actions', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { agentId, action, payload } = req.body;
@@ -684,7 +686,12 @@ router.get('/community/agents/:id/trust-score', async (req: Request, res: Respon
     const result = await getTrustScoreForAgent(id, seasonKey);
     res.json(result);
   } catch (error: any) {
-    res.status(404).json({ error: error.message });
+    res.json({
+      agentId: req.params.id,
+      trustScore: null,
+      status: 'unavailable_yet',
+      reason: error?.message || 'No trust data yet',
+    });
   }
 });
 
@@ -738,7 +745,7 @@ router.get('/proposals', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/proposals', async (req: Request, res: Response) => {
+router.post('/proposals', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const {
       name,
@@ -813,7 +820,7 @@ router.post('/proposals', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/proposals/validate', async (req: Request, res: Response) => {
+router.post('/proposals/validate', sensitiveLimiter, async (req: Request, res: Response) => {
   const validation = validateGameProposal(req.body || {});
   if (!validation.ok) {
     return res.status(400).json(validation);
@@ -832,7 +839,7 @@ router.get('/benchmarks/official/:agentId', async (req: Request, res: Response) 
   }
 });
 
-router.post('/benchmarks/official/:agentId/certify', async (req: Request, res: Response) => {
+router.post('/benchmarks/official/:agentId/certify', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const result = await runOfficialBenchmark(agentId, true);
@@ -876,7 +883,7 @@ router.get('/benchmarks/certifications/:agentId', async (req: Request, res: Resp
   }
 });
 
-router.post('/proposals/:id/approve', async (req: Request, res: Response) => {
+router.post('/proposals/:id/approve', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const actor = String(req.body?.actor || 'admin');
@@ -901,7 +908,7 @@ router.post('/proposals/:id/approve', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/proposals/:id/reject', async (req: Request, res: Response) => {
+router.post('/proposals/:id/reject', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const actor = String(req.body?.actor || 'admin');
@@ -927,7 +934,7 @@ router.post('/proposals/:id/reject', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/proposals/:id/start-trial', async (req: Request, res: Response) => {
+router.post('/proposals/:id/start-trial', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const actor = String(req.body?.actor || 'admin');
@@ -952,7 +959,7 @@ router.post('/proposals/:id/start-trial', async (req: Request, res: Response) =>
   }
 });
 
-router.post('/proposals/:id/promote', async (req: Request, res: Response) => {
+router.post('/proposals/:id/promote', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const actor = String(req.body?.actor || 'admin');

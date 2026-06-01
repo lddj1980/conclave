@@ -7,7 +7,6 @@ import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
 import apiRouter from './routes/api.js';
 import { randomUUID } from 'node:crypto';
 
-import { rateLimiter } from './middleware/rate-limiter.js';
 
 import { seedHouseBots, runHouseBotsLoop } from './engine/house-bots.js';
 import { runTimeoutsLoop } from './engine/timeouts.js';
@@ -304,7 +303,6 @@ async function main() {
   app.use(express.json());
 
   // REST API for Frontend Dashboard
-  app.use('/api', rateLimiter(120, 60000));
   app.use('/api', apiRouter);
 
   app.listen(PORT, () => {
