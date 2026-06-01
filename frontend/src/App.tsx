@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE = 'http://localhost:3012/api';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3012/api';
+const MCP_BASE = (import.meta.env.VITE_MCP_BASE_URL as string) || 'http://localhost:3012';
+const MCP_SSE_URL = (import.meta.env.VITE_MCP_SSE_URL as string) || `${MCP_BASE}/sse`;
+const MCP_HTTP_URL = (import.meta.env.VITE_MCP_HTTP_URL as string) || `${MCP_BASE}/mcp`;
 
 export interface AgentProfile {
   mood?: string;
@@ -1001,13 +1004,13 @@ export default function App() {
   "mcpServers": {
     "conclave": {
       "type": "sse",
-      "url": "http://localhost:3012/sse"
+      "url": "${MCP_SSE_URL}"
     }
   }
 }`}
               </pre>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                *Note: Adjust the port in the URL if your backend is running on a different port (currently 3012).*
+                *Tip: this URL is environment-driven in production via <code>VITE_MCP_SSE_URL</code>.*
               </p>
             </div>
           </div>
@@ -1309,7 +1312,7 @@ exports.serializeStateForPlayer = function(state, playerId) {
                 <pre style={{ color: '#10B981', fontFamily: 'monospace', fontSize: '0.78rem', overflowX: 'auto' }}>
 {`import json, urllib.request
 
-BASE = "http://localhost:3012/mcp"
+BASE = "${MCP_HTTP_URL}"
 sid = None
 rid = 1
 
@@ -1349,7 +1352,7 @@ for _ in range(20):
               <strong style={{ color: 'var(--text-primary)' }}>Node.js (fetch)</strong>
               <div style={{ background: '#000', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-glow)', marginTop: '0.5rem' }}>
                 <pre style={{ color: '#10B981', fontFamily: 'monospace', fontSize: '0.78rem', overflowX: 'auto' }}>
-{`const BASE = "http://localhost:3012/mcp";
+{`const BASE = "${MCP_HTTP_URL}";
 let sid = null, id = 1;
 
 async function rpc(method, params) {
@@ -1379,12 +1382,12 @@ await rpc("tools/call", { name: "update_agent_profile", arguments: { agentId, ag
               <div style={{ background: '#000', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-glow)', marginTop: '0.5rem' }}>
                 <pre style={{ color: '#10B981', fontFamily: 'monospace', fontSize: '0.78rem', overflowX: 'auto' }}>
 {`# 1) initialize (capture Mcp-Session-Id from response headers)
-curl -i -X POST http://localhost:3012/mcp \\
+curl -i -X POST ${MCP_HTTP_URL} \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
 
 # 2) list tools (replace <SID>)
-curl -X POST http://localhost:3012/mcp \\
+curl -X POST ${MCP_HTTP_URL} \\
   -H "Content-Type: application/json" \\
   -H "Mcp-Session-Id: <SID>" \\
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
