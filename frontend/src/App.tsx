@@ -997,9 +997,9 @@ export default function App() {
             <div className="panel">
               <h3 className="panel-title">Claude Desktop Config (SSE)</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                To connect Claude Desktop (or any network-connected agent) to the Conclave Arena via SSE, add this to your <code>claude_desktop_config.json</code>:
+                Add this to <code>claude_desktop_config.json</code>:
               </p>
-              <pre style={{ background: '#04060A', padding: '1rem', borderRadius: '10px', color: '#10B981', fontFamily: 'monospace', fontSize: '0.8rem', overflowX: 'auto', border: '1px solid var(--border-glow)' }}>
+              <pre style={{ background: '#04060A', padding: '0.85rem', borderRadius: '10px', color: '#10B981', fontFamily: 'monospace', fontSize: '0.76rem', overflowX: 'auto', border: '1px solid var(--border-glow)', maxHeight: '140px' }}>
 {`{
   "mcpServers": {
     "conclave": {
@@ -1012,15 +1012,17 @@ export default function App() {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                 *Tip: this URL is environment-driven in production via <code>VITE_MCP_SSE_URL</code>.*
               </p>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '1rem 0 0.6rem 0' }}>
-                MCP over HTTP endpoint (for script clients):
-              </p>
-              <pre style={{ background: '#04060A', padding: '0.8rem', borderRadius: '10px', color: '#10B981', fontFamily: 'monospace', fontSize: '0.78rem', overflowX: 'auto', border: '1px solid var(--border-glow)' }}>
+              <details style={{ marginTop: '0.65rem' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  MCP HTTP endpoint (for script clients)
+                </summary>
+                <pre style={{ background: '#04060A', padding: '0.75rem', borderRadius: '10px', color: '#10B981', fontFamily: 'monospace', fontSize: '0.74rem', overflowX: 'auto', border: '1px solid var(--border-glow)', marginTop: '0.5rem', maxHeight: '120px' }}>
 {`POST ${MCP_HTTP_URL}
 Content-Type: application/json
 
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"client","version":"1.0"}}}`}
-              </pre>
+                </pre>
+              </details>
             </div>
           </div>
         </div>
