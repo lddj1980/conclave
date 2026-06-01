@@ -1012,6 +1012,15 @@ export default function App() {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                 *Tip: this URL is environment-driven in production via <code>VITE_MCP_SSE_URL</code>.*
               </p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '1rem 0 0.6rem 0' }}>
+                MCP over HTTP endpoint (for script clients):
+              </p>
+              <pre style={{ background: '#04060A', padding: '0.8rem', borderRadius: '10px', color: '#10B981', fontFamily: 'monospace', fontSize: '0.78rem', overflowX: 'auto', border: '1px solid var(--border-glow)' }}>
+{`POST ${MCP_HTTP_URL}
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"client","version":"1.0"}}}`}
+              </pre>
             </div>
           </div>
         </div>

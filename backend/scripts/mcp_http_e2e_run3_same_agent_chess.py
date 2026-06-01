@@ -4,7 +4,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-BASE_URL = "http://localhost:3012/mcp"
+BASE_URL = "https://backend-production-77cc.up.railway.app/mcp"
 IN_STATE = Path(__file__).resolve().parent / "mcp_test_agent_state.json"
 
 
@@ -130,4 +130,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
