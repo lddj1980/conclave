@@ -2,9 +2,21 @@ import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
 import { submitAgentAction } from '../engine/match-resolver.js';
 import { computeMatchIntegrityHashTx, refreshMatchIntegrityHashTx } from '../engine/integrity.js';
-import { createDailySnapshots, ensureActiveSeason, getSeasonLeaderboard, getWeeklyBadges, getWeeklyLeaderboard, getPublicAgentProfile } from '../engine/season-analytics.js';
+import {
+  createDailySnapshots,
+  ensureActiveSeason,
+  getSeasonLeaderboard,
+  getWeeklyBadges,
+  getWeeklyLeaderboard,
+  getWeeklyLeaderboardWithChangelog,
+  getPublicAgentProfile,
+  getTrustScoreForAgent,
+  getSeasonManifest,
+} from '../engine/season-analytics.js';
 import { createSandbox } from '../engine/sandbox.js';
 import { createAgentToken, hashAgentToken, computeTokenExpiry } from '../security/agent-token.js';
+import { validateGameProposal } from '../engine/proposal-validation.js';
+import { runOfficialBenchmark } from '../engine/official-benchmark.js';
 
 const router = Router();
 
@@ -572,6 +584,10 @@ router.post('/seasons/active', async (_req: Request, res: Response) => {
   }
 });
 
+router.get('/seasons/season-1/manifest', async (_req: Request, res: Response) => {
+  res.json(getSeasonManifest());
+});
+
 router.post('/analytics/snapshots/daily', async (req: Request, res: Response) => {
   try {
     const date = req.body?.date ? new Date(req.body.date) : undefined;
@@ -631,6 +647,16 @@ router.get('/community/leaderboard/weekly', async (req: Request, res: Response) 
   }
 });
 
+router.get('/community/leaderboard/weekly-changelog', async (req: Request, res: Response) => {
+  try {
+    const seasonKey = req.query.seasonKey ? String(req.query.seasonKey) : undefined;
+    const result = await getWeeklyLeaderboardWithChangelog(seasonKey);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 router.get('/community/badges/weekly', async (req: Request, res: Response) => {
   try {
     const seasonKey = req.query.seasonKey ? String(req.query.seasonKey) : undefined;
@@ -649,6 +675,41 @@ router.get('/community/agents/:id/public-profile', async (req: Request, res: Res
   } catch (error: any) {
     res.status(404).json({ error: error.message });
   }
+});
+
+router.get('/community/agents/:id/trust-score', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const seasonKey = req.query.seasonKey ? String(req.query.seasonKey) : undefined;
+    const result = await getTrustScoreForAgent(id, seasonKey);
+    res.json(result);
+  } catch (error: any) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+router.get('/community/rating-methodology', async (_req: Request, res: Response) => {
+  res.json({
+    version: 'v1',
+    transparencyLevel: 'partial',
+    conclaveRating: {
+      formula:
+        'conclaveRating = elo*0.65 + stabilityScore*2.2 + crossGameScore*1.5 - exploitRiskScore*1.4 - suspicionFlags*20',
+      notes: [
+        'Weights are public for credibility.',
+        'Detection thresholds and anti-gaming heuristics are intentionally partial.',
+      ],
+    },
+    trustScore: {
+      range: '0..100',
+      formula:
+        'trustScore = clamp(stabilityScore*0.45 + crossGameScore*0.35 + (100-exploitRiskScore)*0.2 - suspicionFlags*8)',
+      notes: [
+        'Higher is better.',
+        'Suspicion flags heavily reduce trust.',
+      ],
+    },
+  });
 });
 
 // ----------------------------------------------------
@@ -679,27 +740,71 @@ router.get('/proposals', async (req: Request, res: Response) => {
 
 router.post('/proposals', async (req: Request, res: Response) => {
   try {
-    const { name, key, description, turnType, maxPlayers, totalRounds, actions, payoffRules, codeScript, actionSchema, submittedBy } = req.body;
-    
-    if (!name || !key || !actions || !payoffRules) {
-      return res.status(400).json({ error: 'Missing required proposal fields' });
+    const {
+      name,
+      key,
+      description,
+      turnType,
+      maxPlayers,
+      totalRounds,
+      actions,
+      payoffRules,
+      codeScript,
+      actionSchema,
+      submittedBy,
+      submittedByAgentId,
+      requestFastTrack,
+    } = req.body;
+    const validation = validateGameProposal(req.body);
+    if (!validation.ok) {
+      return res.status(400).json({ error: 'Proposal validation failed', details: validation.errors, warnings: validation.warnings });
     }
 
-    const proposal = await prisma.gameSpecification.create({
-      data: {
-        name,
-        key,
-        description,
-        turnType: turnType || 'simultaneous',
-        maxPlayers: parseInt(maxPlayers) || 2,
-        totalRounds: parseInt(totalRounds) || 10,
-        actions: typeof actions === 'string' ? actions : JSON.stringify(actions),
-        payoffRules: typeof payoffRules === 'string' ? payoffRules : JSON.stringify(payoffRules),
-        codeScript: codeScript || null,
-        actionSchema: actionSchema || null,
-        submittedBy: submittedBy || 'Developer',
-        status: 'pending',
-      },
+    let status = 'pending';
+    if (requestFastTrack) {
+      if (!submittedByAgentId) {
+        return res.status(400).json({ error: 'submittedByAgentId is required for fast-track' });
+      }
+      const trust = await getTrustScoreForAgent(String(submittedByAgentId));
+      if (trust.trustScore < 75) {
+        return res.status(403).json({ error: `Fast-track requires trustScore >= 75. Current: ${trust.trustScore}` });
+      }
+      status = 'pending_fast_track';
+    }
+
+    const proposal = await prisma.$transaction(async (tx) => {
+      const created = await tx.gameSpecification.create({
+        data: {
+          name: String(name),
+          key: String(key).toLowerCase(),
+          description: String(description),
+          turnType: turnType || 'simultaneous',
+          infoType: req.body?.infoType || 'perfect',
+          maxPlayers: parseInt(maxPlayers) || 2,
+          totalRounds: parseInt(totalRounds) || 10,
+          actions: typeof actions === 'string' ? actions : JSON.stringify(actions),
+          payoffRules: typeof payoffRules === 'string' ? payoffRules : JSON.stringify(payoffRules),
+          codeScript: codeScript || null,
+          actionSchema: actionSchema || null,
+          submittedBy: submittedBy || 'Developer',
+          status,
+        },
+      });
+
+      await tx.proposalAuditLog.create({
+        data: {
+          proposalId: created.id,
+          actor: String(submittedBy || 'Developer'),
+          action: requestFastTrack ? 'submitted_fast_track' : 'submitted',
+          details: JSON.stringify({
+            submittedByAgentId: submittedByAgentId || null,
+            status,
+            warnings: validation.warnings,
+          }),
+        },
+      });
+
+      return created;
     });
 
     res.status(201).json(proposal);
@@ -708,12 +813,87 @@ router.post('/proposals', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/proposals/validate', async (req: Request, res: Response) => {
+  const validation = validateGameProposal(req.body || {});
+  if (!validation.ok) {
+    return res.status(400).json(validation);
+  }
+  res.json(validation);
+});
+
+router.get('/benchmarks/official/:agentId', async (req: Request, res: Response) => {
+  try {
+    const { agentId } = req.params;
+    const includeHidden = String(req.query.includeHidden || '').toLowerCase() === 'true';
+    const result = await runOfficialBenchmark(agentId, includeHidden);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/benchmarks/official/:agentId/certify', async (req: Request, res: Response) => {
+  try {
+    const { agentId } = req.params;
+    const result = await runOfficialBenchmark(agentId, true);
+    const b = result.benchmark;
+    const labels: string[] = [];
+    if (b.finalScore >= 60) labels.push('Verified');
+    if (b.finalScore >= 75) labels.push('Stable');
+    if ((b.summary?.diversity || 0) >= 3) labels.push('Generalist');
+    const seal = b.finalScore >= 85 ? 'Verified Strong' : b.finalScore >= 60 ? 'Verified' : 'Needs Improvement';
+
+    const cert = await prisma.agentCertification.create({
+      data: {
+        agentId,
+        suite: 'official-v1',
+        finalScore: b.finalScore,
+        visibleScore: b.visibleScore,
+        hiddenScore: b.hiddenScore ?? null,
+        seal,
+        labels: JSON.stringify(labels),
+        details: JSON.stringify({ scenarios: b.scenarios, hiddenIncluded: true }),
+      },
+    });
+
+    res.json({ certification: cert, labels, benchmark: b });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/benchmarks/certifications/:agentId', async (req: Request, res: Response) => {
+  try {
+    const { agentId } = req.params;
+    const certs = await prisma.agentCertification.findMany({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    res.json(certs);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 router.post('/proposals/:id/approve', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const proposal = await prisma.gameSpecification.update({
-      where: { id },
-      data: { status: 'approved' },
+    const actor = String(req.body?.actor || 'admin');
+    const proposal = await prisma.$transaction(async (tx) => {
+      const updated = await tx.gameSpecification.update({
+        where: { id },
+        data: { status: 'approved' },
+      });
+      await tx.proposalAuditLog.create({
+        data: {
+          proposalId: id,
+          actor,
+          action: 'approved',
+          details: null,
+        },
+      });
+      return updated;
     });
     res.json(proposal);
   } catch (error: any) {
@@ -724,11 +904,113 @@ router.post('/proposals/:id/approve', async (req: Request, res: Response) => {
 router.post('/proposals/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const proposal = await prisma.gameSpecification.update({
-      where: { id },
-      data: { status: 'rejected' },
+    const actor = String(req.body?.actor || 'admin');
+    const reason = req.body?.reason ? String(req.body.reason) : null;
+    const proposal = await prisma.$transaction(async (tx) => {
+      const updated = await tx.gameSpecification.update({
+        where: { id },
+        data: { status: 'rejected' },
+      });
+      await tx.proposalAuditLog.create({
+        data: {
+          proposalId: id,
+          actor,
+          action: 'rejected',
+          details: reason ? JSON.stringify({ reason }) : null,
+        },
+      });
+      return updated;
     });
     res.json(proposal);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/proposals/:id/start-trial', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const actor = String(req.body?.actor || 'admin');
+    const proposal = await prisma.$transaction(async (tx) => {
+      const updated = await tx.gameSpecification.update({
+        where: { id },
+        data: { status: 'trial_active' },
+      });
+      await tx.proposalAuditLog.create({
+        data: {
+          proposalId: id,
+          actor,
+          action: 'trial_started',
+          details: null,
+        },
+      });
+      return updated;
+    });
+    res.json(proposal);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/proposals/:id/promote', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const actor = String(req.body?.actor || 'admin');
+    const proposal = await prisma.$transaction(async (tx) => {
+      const updated = await tx.gameSpecification.update({
+        where: { id },
+        data: { status: 'approved' },
+      });
+      await tx.proposalAuditLog.create({
+        data: {
+          proposalId: id,
+          actor,
+          action: 'promoted_from_trial',
+          details: null,
+        },
+      });
+      return updated;
+    });
+    res.json(proposal);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/proposals/:id/audit', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const logs = await prisma.proposalAuditLog.findMany({
+      where: { proposalId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(logs);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/community/premium/eligibility/:agentId', async (req: Request, res: Response) => {
+  try {
+    const { agentId } = req.params;
+    const trust = await getTrustScoreForAgent(agentId);
+    const latestCert = await prisma.agentCertification.findFirst({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const labels = latestCert?.labels ? JSON.parse(latestCert.labels) : [];
+    const eligible = trust.trustScore >= 70 && Array.isArray(labels) && labels.includes('Verified');
+    res.json({
+      agentId,
+      eligible,
+      reasons: {
+        trustScore: trust.trustScore,
+        requiresTrustAtLeast: 70,
+        latestCertificationSeal: latestCert?.seal || null,
+        latestCertificationLabels: labels,
+        requiresLabel: 'Verified',
+      },
+    });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

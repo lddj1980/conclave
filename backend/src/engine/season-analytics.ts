@@ -1,5 +1,18 @@
 import prisma from '../db.js';
 
+const SEASON_1 = {
+  key: 'season-1',
+  name: 'Season 1',
+  startsAt: new Date('2026-06-01T00:00:00.000Z'),
+  endsAt: new Date('2026-08-31T23:59:59.999Z'),
+  rules: {
+    matchmaking: 'Only subscribed agents can join game-specific queues.',
+    scoring: 'Global ELO + Conclave Rating composite for weekly ranking.',
+    antiGaming: 'Repeated-opponent and monotony risk penalties are applied.',
+    integrity: 'All actions are server-validated and hash-linked in match integrity chain.',
+  },
+} as const;
+
 type SnapshotScores = {
   stabilityScore: number;
   crossGameScore: number;
@@ -72,6 +85,19 @@ export async function ensureActiveSeason() {
   if (existing) return existing;
 
   const now = new Date();
+  if (now >= SEASON_1.startsAt && now <= SEASON_1.endsAt) {
+    return prisma.season.upsert({
+      where: { key: SEASON_1.key },
+      update: { status: 'active', endedAt: null },
+      create: {
+        key: SEASON_1.key,
+        name: SEASON_1.name,
+        status: 'active',
+        startedAt: SEASON_1.startsAt,
+      },
+    });
+  }
+
   const ym = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   return prisma.season.create({
     data: {
@@ -81,6 +107,19 @@ export async function ensureActiveSeason() {
       startedAt: now,
     },
   });
+}
+
+export function getSeasonManifest() {
+  return {
+    season: {
+      key: SEASON_1.key,
+      name: SEASON_1.name,
+      startsAt: SEASON_1.startsAt,
+      endsAt: SEASON_1.endsAt,
+      status: 'fixed',
+    },
+    rules: SEASON_1.rules,
+  };
 }
 
 export async function createDailySnapshots(targetDate?: Date) {
@@ -274,6 +313,104 @@ export async function getWeeklyLeaderboard(seasonKey?: string) {
   };
 }
 
+export async function getWeeklyLeaderboardWithChangelog(seasonKey?: string) {
+  const base = await getSeasonLeaderboard(seasonKey);
+  if (!base.snapshotDate) {
+    return {
+      season: base.season,
+      snapshotDate: base.snapshotDate,
+      weeklyLeaderboard: [],
+      changelog: [],
+    };
+  }
+
+  const current = base.leaderboard.slice(0, 50);
+
+  const prevSnapshots = await prisma.agentPerformanceSnapshot.findMany({
+    where: {
+      seasonId: base.season.id,
+      snapshotDate: {
+        lt: base.snapshotDate,
+      },
+    },
+    select: { snapshotDate: true },
+    distinct: ['snapshotDate'],
+    orderBy: { snapshotDate: 'desc' },
+    take: 1,
+  });
+
+  if (prevSnapshots.length === 0) {
+    return {
+      season: base.season,
+      snapshotDate: base.snapshotDate,
+      weeklyLeaderboard: current,
+      changelog: current.map((r) => ({
+        agentId: r.agentId,
+        agentName: r.agentName,
+        currentRank: r.rank,
+        previousRank: null,
+        rankDelta: 0,
+      })),
+    };
+  }
+
+  const prevDate = prevSnapshots[0].snapshotDate;
+  const prevDayStart = new Date(prevDate);
+  prevDayStart.setUTCHours(0, 0, 0, 0);
+  const prevDayEnd = new Date(prevDayStart);
+  prevDayEnd.setUTCDate(prevDayEnd.getUTCDate() + 1);
+
+  const prevRows = await prisma.agentPerformanceSnapshot.findMany({
+    where: {
+      seasonId: base.season.id,
+      snapshotDate: {
+        gte: prevDayStart,
+        lt: prevDayEnd,
+      },
+    },
+    include: { agent: true },
+  });
+
+  const prevLeaderboard = prevRows
+    .map((s) => {
+      const conclaveRating = Math.round(
+        s.elo * 0.65 +
+          s.stabilityScore * 2.2 +
+          s.crossGameScore * 1.5 -
+          s.exploitRiskScore * 1.4 -
+          s.suspicionFlags * 20
+      );
+      return {
+        agentId: s.agentId,
+        conclaveRating,
+      };
+    })
+    .sort((a, b) => b.conclaveRating - a.conclaveRating)
+    .map((x, idx) => ({ ...x, rank: idx + 1 }));
+
+  const prevRankByAgent = new Map(prevLeaderboard.map((r) => [r.agentId, r.rank]));
+
+  const changelog = current.map((r) => {
+    const previousRank = prevRankByAgent.get(r.agentId) ?? null;
+    const rankDelta = previousRank ? previousRank - r.rank : 0;
+    return {
+      agentId: r.agentId,
+      agentName: r.agentName,
+      currentRank: r.rank,
+      previousRank,
+      rankDelta,
+    };
+  });
+
+  return {
+    season: base.season,
+    snapshotDate: base.snapshotDate,
+    previousSnapshotDate: prevDate,
+    weeklyLeaderboard: current,
+    changelog,
+  };
+}
+
 export async function getWeeklyBadges(seasonKey?: string) {
   const base = await getSeasonLeaderboard(seasonKey);
   const lb = base.leaderboard;
@@ -347,5 +484,42 @@ export async function getPublicAgentProfile(agentId: string) {
       profile: agent.profile,
     },
     recentMatches: last20,
+  };
+}
+
+export async function getTrustScoreForAgent(agentId: string, seasonKey?: string) {
+  const season = seasonKey
+    ? await prisma.season.findUnique({ where: { key: seasonKey } })
+    : await ensureActiveSeason();
+  if (!season) throw new Error('Season not found');
+
+  const latest = await prisma.agentPerformanceSnapshot.findFirst({
+    where: { seasonId: season.id, agentId },
+    orderBy: { snapshotDate: 'desc' },
+  });
+  if (!latest) throw new Error('No trust data for this agent yet');
+
+  const trustScore = clamp(
+    Math.round(
+      latest.stabilityScore * 0.45 +
+        latest.crossGameScore * 0.35 +
+        (100 - latest.exploitRiskScore) * 0.2 -
+        latest.suspicionFlags * 8
+    ),
+    0,
+    100
+  );
+
+  return {
+    season,
+    snapshotDate: latest.snapshotDate,
+    agentId,
+    trustScore,
+    components: {
+      stabilityScore: latest.stabilityScore,
+      crossGameScore: latest.crossGameScore,
+      exploitRiskScore: latest.exploitRiskScore,
+      suspicionFlags: latest.suspicionFlags,
+    },
   };
 }

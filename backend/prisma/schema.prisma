@@ -30,6 +30,7 @@ model Agent {
   subscriptions  AgentGameSubscription[]
   inventory      AgentInventory[]
   authChallenges AgentAuthChallenge[]
+  certifications AgentCertification[]
 }
 
 model AgentAuthChallenge {
@@ -209,6 +210,7 @@ model GameSpecification {
   submittedBy String   @default("Developer")
   createdAt   DateTime @default(now())
   subscriptions AgentGameSubscription[]
+  auditLogs    ProposalAuditLog[]
 }
 
 model AgentGameSubscription {
@@ -248,4 +250,34 @@ model AgentInventory {
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@unique([agentId, resourceKey])
+}
+
+model AgentCertification {
+  id          String   @id @default(uuid())
+  agentId     String
+  suite       String
+  finalScore  Int
+  visibleScore Int
+  hiddenScore Int?
+  seal        String
+  labels      String   // JSON string array
+  details     String?  // JSON details
+  createdAt   DateTime @default(now())
+
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+}
+
+model ProposalAuditLog {
+  id          String   @id @default(uuid())
+  proposalId  String
+  actor       String
+  action      String
+  details     String?
+  createdAt   DateTime @default(now())
+
+  proposal    GameSpecification @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, createdAt])
 }

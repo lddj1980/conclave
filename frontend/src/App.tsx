@@ -106,6 +106,33 @@ interface ScoreboardItem {
   agent: Agent;
 }
 
+interface WeeklyLeaderboardRow {
+  rank: number;
+  agentId: string;
+  agentName: string;
+  owner: string;
+  conclaveRating: number;
+}
+
+interface WeeklyChangelogRow {
+  agentId: string;
+  agentName: string;
+  currentRank: number;
+  previousRank: number | null;
+  rankDelta: number;
+}
+
+interface WeeklyBadgeRow {
+  badge: string;
+  agentId: string;
+  agentName: string;
+  reason: string;
+}
+interface SeasonManifest {
+  season: { key: string; name: string; startsAt: string; endsAt: string; status: string };
+  rules: Record<string, string>;
+}
+
 interface GameSpec {
   id: string;
   key: string;
@@ -126,6 +153,12 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scoreboard, setScoreboard] = useState<ScoreboardItem[]>([]);
+  const [weeklyLeaderboard, setWeeklyLeaderboard] = useState<WeeklyLeaderboardRow[]>([]);
+  const [weeklyChangelog, setWeeklyChangelog] = useState<WeeklyChangelogRow[]>([]);
+  const [weeklyBadges, setWeeklyBadges] = useState<WeeklyBadgeRow[]>([]);
+  const [trustScores, setTrustScores] = useState<Record<string, number>>({});
+  const [seasonManifest, setSeasonManifest] = useState<SeasonManifest | null>(null);
+  const [ratingMethodology, setRatingMethodology] = useState<any>(null);
   const [games, setGames] = useState<GameSpec[]>([]);
   const [proposals, setProposals] = useState<GameSpec[]>([]);
   const [eligibleAgents, setEligibleAgents] = useState<Agent[]>([]);
@@ -170,9 +203,14 @@ export default function App() {
   const [propActions, setPropActions] = useState('["cooperate", "defect"]');
   const [propRules, setPropRules] = useState('{"matrix": {"cooperate,cooperate": [3,3], "cooperate,defect": [0,5], "defect,cooperate": [5,0], "defect,defect": [1,1]}}');
   const [propCodeScript, setPropCodeScript] = useState('');
+  const [proposalValidation, setProposalValidation] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null);
 
   const [adminAuthorized, setAdminAuthorized] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const [benchmarkAgentId, setBenchmarkAgentId] = useState('');
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [benchmarkResult, setBenchmarkResult] = useState<any>(null);
+  const [benchmarkIncludeHidden, setBenchmarkIncludeHidden] = useState(false);
 
   const detailIntervalRef = useRef<any>(null);
   const eligibleAgentsCacheRef = useRef<{ gameType: string; ts: number } | null>(null);
@@ -182,6 +220,8 @@ export default function App() {
     fetchAgents();
     fetchMatches();
     fetchScoreboard();
+    fetchWeeklyCommunityData();
+    fetchSeasonAndMethodology();
     fetchGames();
     fetchProposals();
 
@@ -189,6 +229,8 @@ export default function App() {
       fetchAgents();
       fetchMatches();
       fetchScoreboard();
+      fetchWeeklyCommunityData();
+      fetchSeasonAndMethodology();
       fetchGames();
       fetchProposals();
     }, 10000);
@@ -242,9 +284,57 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/scoreboard`);
       const data = await res.json();
-      setScoreboard(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setScoreboard(rows);
+      const top = rows.slice(0, 25);
+      const trustPairs = await Promise.all(
+        top.map(async (s: any) => {
+          try {
+            const r = await fetch(`${API_BASE}/community/agents/${s.agentId}/trust-score`);
+            if (!r.ok) return [s.agentId, null] as const;
+            const d = await r.json();
+            return [s.agentId, Number(d?.trustScore)] as const;
+          } catch {
+            return [s.agentId, null] as const;
+          }
+        })
+      );
+      const next: Record<string, number> = {};
+      for (const [id, score] of trustPairs) {
+        if (typeof score === 'number' && Number.isFinite(score)) next[id] = score;
+      }
+      setTrustScores(next);
     } catch (e) {
       console.error('Error fetching scoreboard', e);
+    }
+  };
+
+  const fetchWeeklyCommunityData = async () => {
+    try {
+      const [lbRes, badgeRes] = await Promise.all([
+        fetch(`${API_BASE}/community/leaderboard/weekly-changelog`),
+        fetch(`${API_BASE}/community/badges/weekly`),
+      ]);
+      const lbData = await lbRes.json();
+      const badgeData = await badgeRes.json();
+      setWeeklyLeaderboard(Array.isArray(lbData?.weeklyLeaderboard) ? lbData.weeklyLeaderboard : []);
+      setWeeklyChangelog(Array.isArray(lbData?.changelog) ? lbData.changelog : []);
+      setWeeklyBadges(Array.isArray(badgeData?.badges) ? badgeData.badges : []);
+    } catch (e) {
+      console.error('Error fetching weekly community data', e);
+    }
+  };
+
+  const fetchSeasonAndMethodology = async () => {
+    try {
+      const [seasonRes, methodRes] = await Promise.all([
+        fetch(`${API_BASE}/seasons/season-1/manifest`),
+        fetch(`${API_BASE}/community/rating-methodology`),
+      ]);
+      setSeasonManifest(await seasonRes.json());
+      setRatingMethodology(await methodRes.json());
+    } catch (e) {
+      console.error('Error fetching season/methodology', e);
     }
   };
 
@@ -487,6 +577,33 @@ export default function App() {
       JSON.parse(propActions);
       JSON.parse(propRules);
 
+      const pre = await fetch(`${API_BASE}/proposals/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: propName,
+          key: propKey,
+          description: propDesc,
+          turnType: propTurnType,
+          infoType: propInfoType,
+          maxPlayers: 2,
+          totalRounds: propRounds,
+          actions: propActions,
+          payoffRules: propRules,
+          codeScript: propCodeScript || null,
+        }),
+      });
+      const preData = await pre.json();
+      setProposalValidation({
+        ok: !!preData?.ok,
+        errors: Array.isArray(preData?.errors) ? preData.errors : (Array.isArray(preData?.details) ? preData.details : []),
+        warnings: Array.isArray(preData?.warnings) ? preData.warnings : [],
+      });
+      if (!pre.ok || !preData?.ok) {
+        alert(`Proposal blocked by validator: ${(preData?.details || preData?.errors || ['unknown']).join(' | ')}`);
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/proposals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -513,6 +630,7 @@ export default function App() {
         setPropRounds(10);
         setPropInfoType('perfect');
         setPropCodeScript('');
+        setProposalValidation(null);
         fetchProposals();
         setView('admin');
       } else {
@@ -521,6 +639,56 @@ export default function App() {
       }
     } catch (err: any) {
       alert(`Invalid actions or payoff rules JSON: ${err.message}`);
+    }
+  };
+
+  const handleValidateProposal = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/proposals/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: propName,
+          key: propKey,
+          description: propDesc,
+          turnType: propTurnType,
+          infoType: propInfoType,
+          maxPlayers: 2,
+          totalRounds: propRounds,
+          actions: propActions,
+          payoffRules: propRules,
+          codeScript: propCodeScript || null,
+        }),
+      });
+      const data = await res.json();
+      setProposalValidation({
+        ok: !!data?.ok,
+        errors: Array.isArray(data?.errors) ? data.errors : (Array.isArray(data?.details) ? data.details : []),
+        warnings: Array.isArray(data?.warnings) ? data.warnings : [],
+      });
+    } catch (e) {
+      alert('Failed to validate proposal.');
+    }
+  };
+
+  const handleRunBenchmark = async () => {
+    if (!benchmarkAgentId) {
+      alert('Select an agent to benchmark.');
+      return;
+    }
+    try {
+      setBenchmarkLoading(true);
+      const res = await fetch(`${API_BASE}/benchmarks/official/${benchmarkAgentId}?includeHidden=${benchmarkIncludeHidden ? 'true' : 'false'}`);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Benchmark error: ${data.error || 'unknown'}`);
+        return;
+      }
+      setBenchmarkResult(data);
+    } catch (e) {
+      alert('Failed to run benchmark.');
+    } finally {
+      setBenchmarkLoading(false);
     }
   };
 
@@ -853,6 +1021,31 @@ export default function App() {
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
               Conclave is a game theory and asynchronous/synchronous negotiation engine for Artificial Intelligence agents. It exposes native MCP (Model Context Protocol) servers and a robust REST API so you can connect anything from simple Python scripts to autonomous LLM Agents like Claude or GPT.
             </p>
+          </div>
+
+          <div className="panel">
+            <h3 className="panel-title">Season 1 Charter (Official)</h3>
+            {!seasonManifest ? (
+              <p style={{ color: 'var(--text-muted)' }}>Loading season charter...</p>
+            ) : (
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <p>
+                  <strong style={{ color: 'var(--text-primary)' }}>{seasonManifest.season.name}</strong> ({seasonManifest.season.key}) is fixed from{' '}
+                  <code>{new Date(seasonManifest.season.startsAt).toISOString().slice(0, 10)}</code> to{' '}
+                  <code>{new Date(seasonManifest.season.endsAt).toISOString().slice(0, 10)}</code>.
+                </p>
+                <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
+                  {Object.entries(seasonManifest.rules || {}).map(([k, v]) => (
+                    <li key={k}><strong>{k}:</strong> {v}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {ratingMethodology && (
+              <div style={{ marginTop: '0.9rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>Rating methodology ({ratingMethodology?.version})</strong>: transparency <code>{ratingMethodology?.transparencyLevel}</code>.
+              </div>
+            )}
           </div>
 
           <div className="panel">
@@ -1436,6 +1629,45 @@ curl -X POST http://localhost:3012/mcp \\
       {view === 'scoreboard' && (
         <div className="panel">
           <h3 className="panel-title">Conclave Leaderboard</h3>
+          {weeklyLeaderboard.length > 0 && (
+            <div style={{ marginBottom: '0.7rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Weekly Top: <strong style={{ color: 'var(--text-primary)' }}>{weeklyLeaderboard[0].agentName}</strong> (Conclave Rating {weeklyLeaderboard[0].conclaveRating})
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ padding: '0.8rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Weekly Changelog</div>
+              {weeklyChangelog.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No weekly position changes yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {weeklyChangelog.slice(0, 8).map((c) => (
+                    <div key={c.agentId} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', fontSize: '0.85rem' }}>
+                      <span>{c.agentName}</span>
+                      <span style={{ color: c.rankDelta > 0 ? '#35d49a' : c.rankDelta < 0 ? '#ff7b9c' : 'var(--text-muted)' }}>
+                        #{c.currentRank} ({c.rankDelta > 0 ? `+${c.rankDelta}` : c.rankDelta})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '0.8rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Verified Badges</div>
+              {weeklyBadges.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No badges assigned yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {weeklyBadges.slice(0, 10).map((b, idx) => (
+                    <div key={`${b.agentId}-${b.badge}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', fontSize: '0.85rem' }}>
+                      <span>{b.agentName}</span>
+                      <span style={{ color: 'var(--color-secondary)' }}>{b.badge}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="table-container">
             <table className="scoreboard-table">
               <thead>
@@ -1444,6 +1676,7 @@ curl -X POST http://localhost:3012/mcp \\
                   <th>Agent Name</th>
                   <th>Owner</th>
                   <th>ELO Rating</th>
+                  <th>Trust</th>
                   <th>Played</th>
                   <th>W / D / L</th>
                   <th>Total Score</th>
@@ -1452,7 +1685,7 @@ curl -X POST http://localhost:3012/mcp \\
               <tbody>
                 {scoreboard.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
                       No scoreboard data yet. Finish a match to generate ELO rankings!
                     </td>
                   </tr>
@@ -1463,6 +1696,7 @@ curl -X POST http://localhost:3012/mcp \\
                       <td style={{ fontWeight: '600' }}>{s.agent.name}</td>
                       <td>{s.agent.owner}</td>
                       <td className="agent-elo">{s.elo}</td>
+                      <td>{trustScores[s.agentId] ?? '-'}</td>
                       <td>{s.gamesPlayed}</td>
                       <td>{s.wins} / {s.draws} / {s.losses}</td>
                       <td>{s.totalScore}</td>
@@ -1726,7 +1960,27 @@ curl -X POST http://localhost:3012/mcp \\
                 onChange={(e) => setPropCodeScript(e.target.value)}
               />
             </div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Submit Game Proposal</button>
+            <div style={{ display: 'flex', gap: '0.6rem' }}>
+              <button type="button" className="btn" style={{ width: '40%' }} onClick={handleValidateProposal}>Validate Proposal</button>
+              <button type="submit" className="btn btn-primary" style={{ width: '60%' }}>Submit Game Proposal</button>
+            </div>
+            {proposalValidation && (
+              <div style={{ marginTop: '0.8rem', padding: '0.8rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+                <div style={{ fontWeight: 700, color: proposalValidation.ok ? '#35d49a' : '#ff7b9c', marginBottom: '0.4rem' }}>
+                  {proposalValidation.ok ? 'Validation passed' : 'Validation failed'}
+                </div>
+                {proposalValidation.errors.length > 0 && (
+                  <div style={{ color: '#ff7b9c', fontSize: '0.85rem' }}>
+                    {proposalValidation.errors.map((x, i) => <div key={`e-${i}`}>- {x}</div>)}
+                  </div>
+                )}
+                {proposalValidation.warnings.length > 0 && (
+                  <div style={{ color: '#f7c873', fontSize: '0.85rem', marginTop: '0.4rem' }}>
+                    {proposalValidation.warnings.map((x, i) => <div key={`w-${i}`}>- {x}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         </div>
       )}
@@ -1772,6 +2026,71 @@ curl -X POST http://localhost:3012/mcp \\
               >
                 Lock Access
               </button>
+            </div>
+            <div style={{ marginBottom: '1rem', padding: '0.8rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.6rem' }}>Official Benchmark (Suite v1)</div>
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                <select className="form-input" value={benchmarkAgentId} onChange={(e) => setBenchmarkAgentId(e.target.value)}>
+                  <option value="">-- Select Agent --</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>)}
+                </select>
+                <button className="btn btn-primary" onClick={handleRunBenchmark} disabled={benchmarkLoading}>
+                  {benchmarkLoading ? 'Running...' : 'Run Benchmark'}
+                </button>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={benchmarkIncludeHidden} onChange={(e) => setBenchmarkIncludeHidden(e.target.checked)} />
+                Include hidden tests (admin internal view)
+              </label>
+              {benchmarkResult?.benchmark && (
+                <div style={{ marginTop: '0.7rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                  <div>
+                    Score: <strong style={{ color: 'var(--text-primary)' }}>{benchmarkResult.benchmark.finalScore}</strong>/100
+                    {' '}| Seal:{' '}
+                    <strong style={{ color: benchmarkResult.benchmark.finalScore >= 80 ? '#35d49a' : benchmarkResult.benchmark.finalScore >= 60 ? '#f7c873' : '#ff7b9c' }}>
+                      {benchmarkResult.benchmark.finalScore >= 80 ? 'Verified Strong' : benchmarkResult.benchmark.finalScore >= 60 ? 'Verified' : 'Needs Improvement'}
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: '0.3rem' }}>
+                    Visible scenarios: {Array.isArray(benchmarkResult.benchmark.scenarios) ? benchmarkResult.benchmark.scenarios.length : 0}
+                  </div>
+                  {benchmarkIncludeHidden && benchmarkResult.benchmark.hiddenScore !== null && (
+                    <div style={{ marginTop: '0.3rem' }}>
+                      Hidden score: <strong style={{ color: 'var(--text-primary)' }}>{benchmarkResult.benchmark.hiddenScore}</strong>/100
+                    </div>
+                  )}
+                  <div className="table-container" style={{ marginTop: '0.8rem' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Scenario</th>
+                          <th>Score</th>
+                          <th>Weight</th>
+                          <th>Contribution</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(benchmarkResult.benchmark.scenarios || []).map((s: any) => (
+                          <tr key={s.id}>
+                            <td>{s.name || s.id}</td>
+                            <td>{s.score}</td>
+                            <td>{Math.round((s.weight || 0) * 100)}%</td>
+                            <td>{Math.round((s.score || 0) * (s.weight || 0))}</td>
+                          </tr>
+                        ))}
+                        {benchmarkIncludeHidden && Array.isArray(benchmarkResult.benchmark.hiddenScenarios) && benchmarkResult.benchmark.hiddenScenarios.filter((h: any) => h.score !== undefined).map((h: any) => (
+                          <tr key={h.id}>
+                            <td>{h.id} (hidden)</td>
+                            <td>{h.score}</td>
+                            <td>{Math.round((h.weight || 0) * 100)}%</td>
+                            <td>{Math.round((h.score || 0) * (h.weight || 0))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="table-container">
               <table>
