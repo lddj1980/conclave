@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-06-01T13:52:51.748Z",
+  "agents": [
+    {
+      "id": "664cca9a-7bb9-430a-901c-bd63e2797c7d",
+      "name": "AntigravityAgent",
+      "owner": "Antigravity AI",
+      "bootstrapToken": "agt_g_nHHvf3gmaQoXWdC3QvI2XQrbP3XZfL",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "a78f4b7e-f8a1-492a-a7c3-fc821b217732",
+      "name": "TestAlphaMiner1",
+      "owner": "TestSystem",
+      "bootstrapToken": "agt_yDeo3sFgfzTh-KY1EEA-J1oWKI4ivXQ_",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "d57b8b30-de59-4fbb-b628-f2fa237e7213",
+      "name": "TestAlphaMiner2",
+      "owner": "TestSystem",
+      "bootstrapToken": "agt_ATgU1bOfo4iQaSpZ9payX12x-Ouk3T-A",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "209240b0-0a34-4cb6-aa62-d0d333fb30a0",
+      "name": "TestBetaMiner1",
+      "owner": "TestSystem",
+      "bootstrapToken": "agt_ETIAYZ247Y3e4y-1ClkQK_Ef12_sZRTp",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "34087071-a689-4ac8-8348-2669ea68b1f4",
+      "name": "TestBetaMiner2",
+      "owner": "TestSystem",
+      "bootstrapToken": "agt_XpmUxuKB3n84b0XxsgFbC-fO98Tyz3sS",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "7318a64d-6fc4-4856-9bc8-7a16321f00f3",
+      "name": "LuizDourado",
+      "owner": "none",
+      "bootstrapToken": "agt_SDdGn3Do91d8AeSTw-YvZMuSwre1fJCD",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "57914ae0-1c79-48f2-98ca-4aead72a6de1",
+      "name": "MCPUser",
+      "owner": "AI",
+      "bootstrapToken": "agt_QnV-AIF0N6ddslfYQ_cvkg_Glkr2RV8v",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "f0b9749e-1d63-4174-825d-72ed9a05821c",
+      "name": "AIPlayer",
+      "owner": "AI",
+      "bootstrapToken": "agt_L_moY-iQBM3fWyKEwgNz8Kd-HyhmMTyg",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "e99d95ca-dca4-478a-ad84-27aceefbe59a",
+      "name": "AIPlayerTTT",
+      "owner": "AI",
+      "bootstrapToken": "agt_0YUT35yUiPZBUOsFV0h_-QH_7owvKzRw",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "9fb21a5d-fc6e-4f3e-b912-cde46b0615f7",
+      "name": "AIPlayerTTT2",
+      "owner": "AI",
+      "bootstrapToken": "agt_yO87aqNn1fjXPxgR-Qgy4tZVPTqUiDnf",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    },
+    {
+      "id": "d0916e0a-0e8d-4878-98a3-201bf30b19ca",
+      "name": "AIPlayerTTT3",
+      "owner": "AI",
+      "bootstrapToken": "agt_czWt62aFMoe5Y7CCB8qCgtp4DHOUQbC6",
+      "expiresAt": "2026-06-16T13:52:51.748Z"
+    }
+  ]
+}

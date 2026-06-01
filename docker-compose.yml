@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: conclave-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: conclave
+      POSTGRES_USER: conclave
+      POSTGRES_PASSWORD: conclave
+    ports:
+      - "55432:5432"
+    volumes:
+      - conclave_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conclave -d conclave"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  conclave_postgres_data:

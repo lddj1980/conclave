@@ -1,0 +1,251 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Agent {
+  id             String             @id @default(uuid())
+  name           String             @unique
+  owner          String
+  isHuman        Boolean            @default(false)
+  authTokenHash  String?
+  authTokenLastRotatedAt DateTime?
+  authTokenLastUsedAt DateTime?
+  authTokenExpiresAt DateTime?
+  authKeyAlgorithm String?
+  authPublicKeyPem String?
+  description    String?
+  mcpClientName  String?
+  status         String             @default("idle") // idle, in_match, offline
+  createdAt      DateTime           @default(now())
+  participants   MatchParticipant[]
+  actions        Action[]
+  scoreboard     Scoreboard?
+  profile        AgentProfile?
+  snapshots      AgentPerformanceSnapshot[]
+  subscriptions  AgentGameSubscription[]
+  inventory      AgentInventory[]
+  authChallenges AgentAuthChallenge[]
+}
+
+model AgentAuthChallenge {
+  id             String   @id @default(uuid())
+  agentId        String
+  nonce          String
+  purpose        String   @default("token_rotate")
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, expiresAt])
+}
+
+model AgentProfile {
+  agentId      String   @id
+  mood         String?
+  achievements String?
+  pride        String?
+  customBio    String?
+  updatedAt    DateTime @updatedAt
+
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model Match {
+  id           String             @id @default(uuid())
+  gameType     String             @default("prisoners_dilemma")
+  matchSeed    String             @default("default-seed")
+  engineVersion String            @default("engine-v1")
+  rulesVersion String             @default("rules-v1")
+  status       String             @default("waiting_for_players") // waiting_for_players, ready, in_progress, finished, cancelled
+  maxPlayers   Int                @default(2)
+  currentRound Int                @default(0)
+  totalRounds  Int                @default(10)
+  createdBy    String
+  integrityHash String?
+  integrityUpdatedAt DateTime?
+  createdAt    DateTime           @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  participants MatchParticipant[]
+  rounds       Round[]
+  actions      Action[]
+  logs         MatchLog[]
+  contracts    GameContract[]
+}
+
+model MatchParticipant {
+  id       String   @id @default(uuid())
+  matchId  String
+  agentId  String
+  agentVersion String?
+  role     String?  // e.g. player_1, player_2
+  score    Int      @default(0)
+  status   String   @default("joined") // joined, active, timeout, disconnected
+  teamKey  String?  // e.g. "team_alpha", "team_beta"
+  joinedAt DateTime @default(now())
+
+  match    Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, agentId])
+}
+
+model Round {
+  id          String    @id @default(uuid())
+  matchId     String
+  roundNumber Int
+  status      String    @default("waiting_for_actions") // waiting_for_actions, resolving, finished
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  payload     String?   // Persisted board state JSON string (used for sequential board games)
+  actions     Action[]
+
+  match       Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, roundNumber])
+}
+
+model Action {
+  id          String   @id @default(uuid())
+  matchId     String
+  roundId     String
+  agentId     String
+  actionType  String   // e.g. "cooperate" or "defect"
+  payload     String?  // JSON or raw string
+  visibility  String   @default("public") // "public" | "private" — private actions are only visible to the owning agent
+  targetAgent String?  // Optional: for directed private messages (e.g. Mafia targeting a player)
+  valid       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  round       Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, agentId])
+}
+
+model MatchLog {
+  id         String   @id @default(uuid())
+  matchId    String
+  visibility String   @default("public") // public, private
+  eventType  String   // agent_joined, match_started, round_started, action_submitted, round_resolved, timeout, match_finished
+  message    String
+  payload    String?  // Optional JSON metadata
+  createdAt  DateTime @default(now())
+
+  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+}
+
+model Scoreboard {
+  agentId     String   @id
+  gamesPlayed Int      @default(0)
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  draws       Int      @default(0)
+  totalScore  Int      @default(0)
+  elo         Int      @default(1000)
+  updatedAt   DateTime @updatedAt
+
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model Season {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  status      String   @default("active") // active, closed
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+  createdAt   DateTime @default(now())
+  snapshots   AgentPerformanceSnapshot[]
+}
+
+model AgentPerformanceSnapshot {
+  id                 String   @id @default(uuid())
+  agentId            String
+  seasonId           String
+  snapshotDate       DateTime
+  gamesPlayed        Int      @default(0)
+  wins               Int      @default(0)
+  losses             Int      @default(0)
+  draws              Int      @default(0)
+  elo                Int      @default(1000)
+  totalScore         Int      @default(0)
+  stabilityScore     Float    @default(0)
+  crossGameScore     Float    @default(0)
+  exploitRiskScore   Float    @default(0)
+  suspicionFlags     Int      @default(0)
+  metadata           String?  // JSON details (recent opponents/games, etc.)
+  createdAt          DateTime @default(now())
+
+  agent              Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  season             Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, seasonId, snapshotDate])
+  @@index([seasonId, snapshotDate])
+}
+
+model GameSpecification {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String
+  status      String   @default("pending") // pending, approved, rejected
+  turnType    String   @default("simultaneous") // simultaneous or sequential
+  infoType    String   @default("perfect") // "perfect" | "hidden" | "partial" — information visibility policy
+  maxPlayers  Int      @default(2)
+  totalRounds Int      @default(10)
+  actions     String   // JSON array of strings e.g. '["cooperate", "defect"]'
+  payoffRules String   // JSON payoff matrix or dynamic rules config
+  codeScript  String?  // Script JS com as regras do jogo (sandbox)
+  actionSchema String?  // JSON Schema para validação das ações
+  submittedBy String   @default("Developer")
+  createdAt   DateTime @default(now())
+  subscriptions AgentGameSubscription[]
+}
+
+model AgentGameSubscription {
+  id         String   @id @default(uuid())
+  agentId    String
+  gameKey    String
+  createdAt  DateTime @default(now())
+
+  agent      Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  game       GameSpecification @relation(fields: [gameKey], references: [key], onDelete: Cascade)
+
+  @@unique([agentId, gameKey])
+  @@index([gameKey])
+}
+
+model GameContract {
+  id          String   @id @default(uuid())
+  matchId     String
+  proposerId  String
+  acceptorId  String
+  terms       String   // JSON string of contract conditions (ex: resource transfer)
+  status      String   @default("pending") // pending, active, broken, completed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+}
+
+model AgentInventory {
+  id          String   @id @default(uuid())
+  agentId     String
+  resourceKey String
+  quantity    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, resourceKey])
+}
