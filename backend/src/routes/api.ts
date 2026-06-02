@@ -18,6 +18,7 @@ import { createAgentToken, hashAgentToken, computeTokenExpiry, verifyEd25519Sign
 import { securityConfig } from '../config/security.js';
 import { extractAgentToken, resolveAgentFromToken, requireAdminTokenConfigured } from '../security/request-auth.js';
 import { validateGameProposal } from '../engine/proposal-validation.js';
+import { createGameProposal } from '../engine/proposal-service.js';
 import { runOfficialBenchmark } from '../engine/official-benchmark.js';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 
@@ -265,6 +266,38 @@ router.post('/agents/:id/profile', sensitiveLimiter, async (req: Request, res: R
   }
 });
 
+router.post('/agents/:id/deactivate', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const agent = await prisma.agent.findUnique({ where: { id } });
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (isAuthEnforced()) {
+      const authResult = await requireAgentIdentity(req);
+      if (authResult.error) {
+        return res.status(authResult.error.status).json({ error: authResult.error.error });
+      }
+      if (authResult.agent?.id !== id) {
+        return res.status(403).json({ error: 'Authenticated agent does not match target agent' });
+      }
+    }
+
+    await prisma.agent.update({
+      where: { id },
+      data: {
+        status: 'offline',
+        authTokenExpiresAt: new Date(0),
+      },
+    });
+
+    res.json({ ok: true, agentId: id, agentName: agent.name, status: 'offline' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Matches
 router.get('/matches', async (req: Request, res: Response) => {
   try {
@@ -423,6 +456,10 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (agent.status === 'offline') {
+      return res.status(400).json({ error: 'Agent is deactivated' });
     }
 
     if (isAuthEnforced() && agent.owner !== 'HouseBot') {
@@ -912,83 +949,23 @@ router.get('/proposals', async (req: Request, res: Response) => {
 
 router.post('/proposals', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
-    const {
-      name,
-      key,
-      description,
-      turnType,
-      maxPlayers,
-      totalRounds,
-      actions,
-      payoffRules,
-      codeScript,
-      actionSchema,
-      submittedBy,
-      submittedByAgentId,
-      requestFastTrack,
-    } = req.body;
     const validation = validateGameProposal(req.body);
     if (!validation.ok) {
       return res.status(400).json({ error: 'Proposal validation failed', details: validation.errors, warnings: validation.warnings });
     }
-
-    const hasCodeScript = typeof codeScript === 'string' && codeScript.trim().length > 0;
-    if (requestFastTrack && hasCodeScript) {
+    const result = await createGameProposal(req.body);
+    res.status(201).json(result.proposal);
+  } catch (error: any) {
+    const details = Array.isArray(error?.details) ? error.details : undefined;
+    if (error?.message === 'Proposal validation failed') {
+      return res.status(400).json({ error: error.message, details, warnings: Array.isArray(error?.warnings) ? error.warnings : [] });
+    }
+    if (error?.code === 'FAST_TRACK_DISABLED_FOR_SCRIPT') {
       return res.status(400).json({
         error: 'Script-bearing proposals must go through trial before approval',
         message: 'Fast-track is disabled for proposals that include codeScript.',
       });
     }
-
-    let status = 'pending';
-    if (requestFastTrack) {
-      if (!submittedByAgentId) {
-        return res.status(400).json({ error: 'submittedByAgentId is required for fast-track' });
-      }
-      const trust = await getTrustScoreForAgent(String(submittedByAgentId));
-      if (trust.trustScore < 75) {
-        return res.status(403).json({ error: `Fast-track requires trustScore >= 75. Current: ${trust.trustScore}` });
-      }
-      status = 'pending_fast_track';
-    }
-
-    const proposal = await prisma.$transaction(async (tx) => {
-      const created = await tx.gameSpecification.create({
-        data: {
-          name: String(name),
-          key: String(key).toLowerCase(),
-          description: String(description),
-          turnType: turnType || 'simultaneous',
-          infoType: req.body?.infoType || 'perfect',
-          maxPlayers: parseInt(maxPlayers) || 2,
-          totalRounds: parseInt(totalRounds) || 10,
-          actions: typeof actions === 'string' ? actions : JSON.stringify(actions),
-          payoffRules: typeof payoffRules === 'string' ? payoffRules : JSON.stringify(payoffRules),
-          codeScript: codeScript || null,
-          actionSchema: actionSchema || null,
-          submittedBy: submittedBy || 'Developer',
-          status,
-        },
-      });
-
-      await tx.proposalAuditLog.create({
-        data: {
-          proposalId: created.id,
-          actor: String(submittedBy || 'Developer'),
-          action: requestFastTrack ? 'submitted_fast_track' : 'submitted',
-          details: JSON.stringify({
-            submittedByAgentId: submittedByAgentId || null,
-            status,
-            warnings: validation.warnings,
-          }),
-        },
-      });
-
-      return created;
-    });
-
-    res.status(201).json(proposal);
-  } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
 });

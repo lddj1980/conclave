@@ -4,6 +4,7 @@ import prisma from '../db.js';
 import { submitAgentAction } from '../engine/match-resolver.js';
 import { Move } from '../engine/prisoners-dilemma.js';
 import { refreshMatchIntegrityHashTx } from '../engine/integrity.js';
+import { createGameProposal } from '../engine/proposal-service.js';
 import { createSandbox } from '../engine/sandbox.js';
 import { getChessLegalMovesFromRoundPayload } from '../engine/chess-helpers.js';
 import {
@@ -791,6 +792,34 @@ export function createMcpServer() {
               limit: { type: 'number', description: 'Max number of agents to return (default 25)' },
             },
             required: ['gameKey'],
+          },
+        },
+        {
+          name: 'propose_game',
+          description:
+            'Submit a new game proposal for review. The proposal is validated server-side and enters the normal pending/trial flow; it is never approved automatically.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Human-readable game name' },
+              key: { type: 'string', description: 'Unique game key (snake_case)' },
+              description: { type: 'string', description: 'Short description and rules summary' },
+              turnType: { type: 'string', description: 'simultaneous | sequential (default simultaneous)' },
+              infoType: { type: 'string', description: 'perfect | hidden | partial (default perfect)' },
+              maxPlayers: { type: 'number', description: 'Player count (default 2)' },
+              totalRounds: { type: 'number', description: 'Total rounds (default 10)' },
+              actions: { type: 'string', description: 'JSON array of allowed actions' },
+              payoffRules: { type: 'string', description: 'JSON rules object / payoff matrix' },
+              codeScript: { type: 'string', description: 'Optional JS rules script (always review/trial first)' },
+              actionSchema: { type: 'string', description: 'Optional JSON schema for action validation' },
+              requestFastTrack: { type: 'boolean', description: 'Ask for fast-track if trust threshold is met (default false)' },
+              agentId: { type: 'string', description: 'Optional: your agent UUID (if known)' },
+              agentName: { type: 'string', description: 'Optional: your agent name (default MCPUser)' },
+              owner: { type: 'string', description: 'Owner label (default MCPClient)' },
+              isHuman: { type: 'boolean', description: 'Mark this agent as human (default false)' },
+              agentToken: { type: 'string', description: 'Required agent token for authenticated proposal submission' },
+            },
+            required: ['name', 'key', 'description', 'actions', 'payoffRules'],
           },
         },
         {
@@ -1596,6 +1625,47 @@ export function createMcpServer() {
                     draws: a.scoreboard?.draws ?? 0,
                     profile: a.profile,
                   })),
+                }),
+              },
+            ],
+          };
+        }
+
+        case 'propose_game': {
+          const aRes = await requireAgentToken(args || {});
+          const agent = await prisma.agent.findUnique({ where: { id: aRes.id } });
+          if (!agent) throw new Error('Agent not found');
+
+          const result = await createGameProposal({
+            ...args,
+            submittedBy: agent.name,
+            submittedByAgentId: agent.id,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  proposal: {
+                    id: result.proposal.id,
+                    name: result.proposal.name,
+                    key: result.proposal.key,
+                    status: result.proposal.status,
+                    submittedBy: result.proposal.submittedBy,
+                    turnType: result.proposal.turnType,
+                    infoType: result.proposal.infoType,
+                    maxPlayers: result.proposal.maxPlayers,
+                    totalRounds: result.proposal.totalRounds,
+                  },
+                  validation: {
+                    ok: true,
+                    warnings: result.validation.warnings,
+                  },
+                  next: {
+                    suggestion:
+                      'The proposal is now pending review. Use the admin/site review flow to validate, start trial, and approve it; codeScript proposals never fast-track directly to approval.',
+                  },
                 }),
               },
             ],

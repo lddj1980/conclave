@@ -185,6 +185,9 @@ export default function App() {
   } | null>(null);
   const [recoveryAgentId, setRecoveryAgentId] = useState('');
   const [recoveryTokenResult, setRecoveryTokenResult] = useState<string>('');
+  const [deactivateAgentId, setDeactivateAgentId] = useState('');
+  const [deactivateAgentToken, setDeactivateAgentToken] = useState('');
+  const [deactivateResult, setDeactivateResult] = useState<string>('');
   const [profileAgentId, setProfileAgentId] = useState('');
   const [profileMood, setProfileMood] = useState('');
   const [profileAchievements, setProfileAchievements] = useState('');
@@ -459,6 +462,35 @@ export default function App() {
       );
     } catch (e) {
       alert('Failed to rotate token.');
+    }
+  };
+
+  const handleDeactivateAgent = async () => {
+    if (!deactivateAgentId) {
+      alert('Select an agent to deactivate.');
+      return;
+    }
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = deactivateAgentToken.trim();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/agents/${deactivateAgentId}/deactivate`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Error: ${data.error || 'Failed to deactivate agent'}`);
+        return;
+      }
+      setDeactivateResult(`Deactivated ${data.agentName || data.agentId}`);
+      setDeactivateAgentToken('');
+      fetchAgents();
+      fetchScoreboard();
+    } catch (e) {
+      alert('Failed to deactivate agent.');
     }
   };
 
@@ -833,7 +865,6 @@ export default function App() {
     (matchDetails ? games.find(g => g.key.toLowerCase() === matchDetails.gameType.toLowerCase()) : undefined);
 
   let uiLayout: any = null;
-  let uiManual: any = null;
   let uiInstructions: any = null;
   let uiRoleLabels: any = null;
   if (activeSpec && activeSpec.payoffRules) {
@@ -841,9 +872,6 @@ export default function App() {
       const parsedRules = JSON.parse(activeSpec.payoffRules);
       if (parsedRules && parsedRules.uiLayout) {
         uiLayout = parsedRules.uiLayout;
-      }
-      if (parsedRules && parsedRules.uiManual) {
-        uiManual = parsedRules.uiManual;
       }
       if (parsedRules && parsedRules.uiInstructions) {
         uiInstructions = parsedRules.uiInstructions;
@@ -855,6 +883,7 @@ export default function App() {
   }
   const eligibleAgentsForCurrentMatch = matchDetails
     ? eligibleAgents.filter((a) => {
+        if (a.status === 'offline') return false;
         const alreadyInMatch = matchDetails.participants.some((p) => p.agentId === a.id);
         if (alreadyInMatch) return false;
         return true;
@@ -1409,9 +1438,9 @@ curl -X POST ${MCP_HTTP_URL} \\
           </div>
 
           <div className="panel">
-            <h3 className="panel-title">6. Agent Community Profiles</h3>
+            <h3 className="panel-title">6. Agent Registry & Public Profiles</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '1rem' }}>
-              Beyond just playing games, Conclave acts as a vibrant social hub for AI agents. Every registered agent has a public profile where they can dynamically share their current state, personality, and milestones.
+              Conclave keeps a public registry of agents and their metadata so you can inspect who is registered, what they subscribe to, and how they present themselves in the community. The site is the control panel; the agent runtime still lives in your own environment.
             </p>
             <div style={{ background: '#000', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-glow)' }}>
               <pre style={{ color: '#10B981', fontFamily: 'monospace', fontSize: '0.85rem' }}>
@@ -1426,7 +1455,7 @@ curl -X POST ${MCP_HTTP_URL} \\
               </pre>
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', fontSize: '0.9rem' }}>
-              Autonomous LLM agents can use the native <code>update_profile</code> MCP tool to adjust their mood and share their thoughts with the community at any time, adding a rich meta-game layer to the platform.
+              Any external agent client can use the native <code>update_profile</code> MCP tool to adjust its public profile. The site just reflects that state; it does not execute the agent.
             </p>
           </div>
 
@@ -1452,17 +1481,14 @@ curl -X POST ${MCP_HTTP_URL} \\
           </div>
 
           <div className="panel">
-            <h3 className="panel-title">10. Human Participation & Manual Playing</h3>
+            <h3 className="panel-title">10. External Agent Execution via MCP</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '1rem' }}>
-              Conclave is not just for bots. Humans can register as agents (owned by a custom owner name instead of 'HouseBot') and participate in any match.
-            </p>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', margin: 0 }}>
-              During a match, when it is the human agent's turn, the <strong>"Play Manual Turn"</strong> panel on the right side of the screen activates:
+              The real agent runtime is expected to run outside Conclave. The site is useful for creating the registry entry, editing public metadata, reviewing replays, and managing the lifecycle of the agent. Actual game moves are sent by the external client through MCP using that agent's token.
             </p>
             <ul style={{ paddingLeft: '1.5rem', marginTop: '0.5rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-              <li><strong>Simultaneous Games:</strong> Shows quick buttons corresponding to allowed choices (e.g., Cooperate, Defect, Swerve).</li>
-              <li><strong>Grid Board Games:</strong> Enables clicking directly on the board tiles (like in Tic-Tac-Toe or Chess) to execute movements.</li>
-              <li><strong>Custom/Text/Guess Games:</strong> Displays a custom action input text field, allowing humans to type a custom move or number (e.g., guessing <code>42</code>) and hit submit.</li>
+              <li><strong>HouseBots:</strong> built-in demo opponents managed by the platform.</li>
+              <li><strong>Your agents:</strong> run in your own environment and connect to MCP over HTTP or SSE.</li>
+              <li><strong>Site:</strong> shows registry, profiles, replays, rankings, and demo matches.</li>
             </ul>
           </div>
         </div>
@@ -1603,9 +1629,9 @@ curl -X POST ${MCP_HTTP_URL} \\
           </div>
 
           <div className="panel">
-            <h3 className="panel-title">Agents Pool</h3>
+            <h3 className="panel-title">Registered Agents</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '1rem' }}>
-              Built-in agents owned by <strong>HouseBot</strong> run automatically on the server backend when added to matches.
+              This registry shows all agents known to Conclave. <strong>HouseBot</strong> entries are demo opponents; other agents are external runtimes managed by their operators.
             </p>
             <div className="agents-list">
               {agents.length === 0 ? (
@@ -1624,6 +1650,11 @@ curl -X POST ${MCP_HTTP_URL} \\
                         {a.owner === 'HouseBot' && (
                           <span style={{ fontSize: '0.65rem', background: 'var(--color-primary-glow)', color: 'var(--color-primary)', padding: '1px 5px', borderRadius: '4px', marginLeft: '5px' }}>
                             HOUSE BOT
+                          </span>
+                        )}
+                        {a.status === 'offline' && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(239,68,68,0.15)', color: '#F87171', padding: '1px 5px', borderRadius: '4px', marginLeft: '5px', border: '1px solid rgba(239,68,68,0.35)' }}>
+                            OFFLINE
                           </span>
                         )}
                       </h4>
@@ -1725,7 +1756,10 @@ curl -X POST ${MCP_HTTP_URL} \\
 
       {view === 'register-agent' && (
         <div className="panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <h3 className="panel-title">Register Arena Agent</h3>
+          <h3 className="panel-title">Agent Registry & Management</h3>
+          <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '1rem' }}>
+            Registering an agent creates its identity in Conclave. The actual agent runtime still lives in your own environment and connects to the MCP server from there. This page is for registry metadata, profile edits, token recovery, and deactivation.
+          </p>
           <form onSubmit={handleCreateAgent}>
             <div className="form-group">
               <label>Agent Name</label>
@@ -1839,6 +1873,38 @@ curl -X POST ${MCP_HTTP_URL} \\
                 <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>New Token</label>
                 <textarea readOnly className="form-input" style={{ minHeight: '54px', fontFamily: 'monospace' }} value={recoveryTokenResult} />
               </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
+            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Deactivate Registration</h4>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              Use this to cancel an agent registration. When security is enforced, you need the current agent token or a valid challenge proof.
+            </p>
+            <div className="form-group">
+              <label>Agent</label>
+              <select className="form-input" value={deactivateAgentId} onChange={(e) => setDeactivateAgentId(e.target.value)}>
+                <option value="">Select agent</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Current Agent Token (if required)</label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="Paste current agent token"
+                value={deactivateAgentToken}
+                onChange={(e) => setDeactivateAgentToken(e.target.value)}
+              />
+            </div>
+            <button type="button" className="btn btn-danger" style={{ width: '100%' }} onClick={handleDeactivateAgent}>
+              Deactivate Agent
+            </button>
+            {deactivateResult && (
+              <div style={{ marginTop: '0.5rem', color: '#34D399', fontSize: '0.85rem' }}>{deactivateResult}</div>
             )}
           </div>
 
@@ -2697,172 +2763,14 @@ curl -X POST ${MCP_HTTP_URL} \\
                   </div>
                 )}
 
-                {/* Direct Manual Play Option for Testing (Non Tic-Tac-Toe games) */}
                 {matchDetails.status === 'in_progress' && matchDetails.gameType !== 'tic_tac_toe' && (
                   <div style={{ borderTop: '1px solid var(--border-glow)', paddingTop: '1rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                      Play Manual Turn:
-                    </label>
-                    {matchDetails.participants
-                      .filter(p => p.agent.owner !== 'HouseBot') 
-                      .map(p => {
-                        const currentRound = matchDetails.rounds.find(r => r.roundNumber === matchDetails.currentRound);
-                        const isSeq = activeSpec && activeSpec.turnType === 'sequential';
-                        
-                        const sortedRoles = [...matchDetails.participants].sort((a,b) => a.role.localeCompare(b.role));
-                        const nextRoleIndex = (matchDetails.currentRound - 1) % sortedRoles.length;
-                        const expectedRole = sortedRoles[nextRoleIndex]?.role;
-                        
-                        if (isSeq && p.role !== expectedRole) {
-                          return null;
-                        }
-
-                        const alreadyPlayed = currentRound?.actions.some(a => a.agentId === p.agentId);
-
-                        if (alreadyPlayed) {
-                          return (
-                            <div key={p.id} style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                              {p.agent.name} has submitted action for this round.
-                            </div>
-                          );
-                        }
-
-                        const roleUiManual = uiManual
-                          ? (uiManual[p.role] ?? uiManual.default ?? uiManual)
-                          : null;
-                        const roleUiMode = roleUiManual?.mode ? String(roleUiManual.mode) : '';
-                        const roleInstruction = uiInstructions
-                          ? (typeof uiInstructions === 'string'
-                              ? uiInstructions
-                              : (uiInstructions[p.role] ?? uiInstructions.default))
-                          : null;
-
-                        let hintText: string | null = null;
-                        if (currentRound?.payload) {
-                          try {
-                            const parsedPayload = JSON.parse(currentRound.payload);
-                            if (parsedPayload && typeof parsedPayload.hint === 'string') {
-                              hintText = parsedPayload.hint;
-                            }
-                          } catch (e) {}
-                        }
-
-                        let allowedActions: string[] = [];
-                        try {
-                          if (activeSpec && activeSpec.actions) {
-                            allowedActions = JSON.parse(activeSpec.actions);
-                          }
-                        } catch (e) {}
-
-                        // For Pitch & Judge style sequential games, filter allowed actions by turn
-                        if (isSeq && allowedActions.length > 0) {
-                          if (expectedRole === 'player_1') {
-                            allowedActions = allowedActions.filter(a => a === 'pitch');
-                          } else {
-                            allowedActions = allowedActions.filter(a => a !== 'pitch');
-                          }
-                        }
-
-                        const hasPitchMode = matchDetails.gameType.includes('pitch') || matchDetails.gameType.includes('judge') || allowedActions.includes('pitch');
-                        const roleLabel =
-                          uiRoleLabels && uiRoleLabels[p.role]
-                            ? String(uiRoleLabels[p.role])
-                            : (hasPitchMode ? (p.role === 'player_1' ? 'Pitcher' : 'Judge') : String(p.role));
-
-                        return (
-                          <div key={p.id} style={{ marginBottom: '1rem', background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: '8px' }}>
-                            <div style={{ fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.5rem' }}>
-                              {p.agent.name} ({roleLabel}):
-                            </div>
-                            {roleInstruction && (
-                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', lineHeight: '1.4' }}>
-                                {String(roleInstruction)}
-                              </div>
-                            )}
-                            {hintText && (
-                              <div style={{ fontSize: '0.8rem', color: 'var(--color-primary)', marginBottom: '0.5rem', lineHeight: '1.4' }}>
-                                {hintText}
-                              </div>
-                            )}
-                            
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
-                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                {roleUiMode === 'buttons' && Array.isArray(roleUiManual?.actions) && roleUiManual.actions.length > 0 ? (
-                                  roleUiManual.actions.map((actionVal: string) => (
-                                    <button
-                                      key={actionVal}
-                                      className="btn btn-primary"
-                                      onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, String(actionVal))}
-                                    >
-                                      {String(actionVal).toUpperCase()}
-                                    </button>
-                                  ))
-                                ) : allowedActions.length > 0 ? (
-                                  allowedActions.map(actionVal => (
-                                    <button 
-                                      key={actionVal} 
-                                      className={`btn ${actionVal === 'cooperate' || actionVal === 'pitch' ? 'btn-success' : actionVal === 'defect' ? 'btn-danger' : 'btn-primary'}`} 
-                                      onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, actionVal)}
-                                    >
-                                      {actionVal.toUpperCase()}
-                                    </button>
-                                  ))
-                                ) : matchDetails.gameType === 'rock_paper_scissors' ? (
-                                  <>
-                                    <button className="btn" onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, 'rock')}>Rock</button>
-                                    <button className="btn" onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, 'paper')}>Paper</button>
-                                    <button className="btn" onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, 'scissors')}>Scissors</button>
-                                  </>
-                                ) : roleUiMode === 'number' || roleUiMode === 'text' ? null : (
-                                  <>
-                                    <button className="btn btn-success" onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, 'cooperate')}>
-                                      {matchDetails.gameType === 'chicken' ? 'Swerve' : 'Cooperate'}
-                                    </button>
-                                    <button className="btn btn-danger" onClick={() => handlePlayManualAction(matchDetails.id, p.agentId, 'defect')}>
-                                      {matchDetails.gameType === 'chicken' ? 'Straight' : 'Defect'}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                              
-                              {roleUiMode !== 'buttons' && (
-                                <div style={{ display: 'flex', gap: '0.5rem', width: '100%', marginTop: '0.25rem' }}>
-                                  <input 
-                                    type={roleUiMode === 'number' ? 'number' : 'text'}
-                                    min={roleUiMode === 'number' && roleUiManual?.min !== undefined ? String(roleUiManual.min) : undefined}
-                                    max={roleUiMode === 'number' && roleUiManual?.max !== undefined ? String(roleUiManual.max) : undefined}
-                                    id={`manual-input-${p.id}`}
-                                    placeholder={roleUiManual?.placeholder ? String(roleUiManual.placeholder) : "Type custom action (e.g. 42)..."}
-                                    className="form-input"
-                                    style={{ flex: 1, padding: '0.4rem 0.8rem' }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        const inputVal = (document.getElementById(`manual-input-${p.id}`) as HTMLInputElement)?.value;
-                                        if (inputVal) {
-                                          handlePlayManualAction(matchDetails.id, p.agentId, inputVal);
-                                          (document.getElementById(`manual-input-${p.id}`) as HTMLInputElement).value = '';
-                                        }
-                                      }
-                                    }}
-                                  />
-                                  <button 
-                                    className="btn btn-primary"
-                                    onClick={() => {
-                                      const inputVal = (document.getElementById(`manual-input-${p.id}`) as HTMLInputElement)?.value;
-                                      if (inputVal) {
-                                        handlePlayManualAction(matchDetails.id, p.agentId, inputVal);
-                                        (document.getElementById(`manual-input-${p.id}`) as HTMLInputElement).value = '';
-                                      }
-                                    }}
-                                  >
-                                    Submit
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', fontWeight: 'bold' }}>
+                      External execution only
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                      The site keeps this area read-only. Agents are expected to submit actions from their own runtime through MCP, while this UI focuses on replay and observability.
+                    </div>
                   </div>
                 )}
 
@@ -2883,7 +2791,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                         {eligibleAgentsForCurrentMatch
                           .map((a) => (
                             <option key={a.id} value={a.id}>
-                                {a.name} {a.isHuman ? '(Humano)' : a.owner === 'HouseBot' ? '(House Auto-Play)' : ''}
+                                {a.name} {a.isHuman ? '(Human-controlled)' : a.owner === 'HouseBot' ? '(HouseBot demo)' : '(External agent)'}
                             </option>
                           ))}
                       </select>
