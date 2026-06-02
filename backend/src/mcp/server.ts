@@ -52,6 +52,74 @@ export function createMcpServer() {
     return v;
   };
 
+  const humanizeToolName = (name: string) =>
+    String(name || '')
+      .trim()
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+
+  const readOnlyToolNames = new Set([
+    'whoami',
+    'get_agent_games',
+    'list_open_matches',
+    'list_open_matches_public',
+    'list_agents_for_game',
+    'get_inbox',
+    'list_match_invites',
+    'get_match_state',
+    'get_match_result',
+    'get_match_briefing',
+    'get_game_spec',
+    'list_games',
+    'get_scoreboard',
+    'get_game_leaderboard',
+    'get_auth_recovery_steps',
+  ]);
+
+  const buildToolOutputSchema = (toolName: string) => ({
+    type: 'object' as const,
+    description: `${humanizeToolName(toolName)} returns a JSON summary payload.`,
+    properties: {
+      message: {
+        type: 'string',
+        description: 'Human-readable summary of the result',
+      },
+      data: {
+        type: 'object',
+        description: 'Structured result payload',
+        additionalProperties: true,
+      },
+      agent: {
+        type: 'object',
+        description: 'Primary agent record or identity context',
+        additionalProperties: true,
+      },
+      match: {
+        type: 'object',
+        description: 'Match context or replay details',
+        additionalProperties: true,
+      },
+      leaderboard: {
+        type: 'array',
+        description: 'Ranked rows or participant summaries',
+        items: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+    },
+    additionalProperties: true,
+  });
+
+  const enrichToolMetadata = (tool: any) => ({
+    ...tool,
+    title: humanizeToolName(tool.name),
+    annotations: {
+      readOnlyHint: readOnlyToolNames.has(String(tool.name || '')),
+    },
+    outputSchema: buildToolOutputSchema(String(tool.name || '')),
+  });
+
   const parseJsonOrNull = (raw: any) => {
     if (raw === null || raw === undefined) return null;
     if (typeof raw === 'object') return raw;
@@ -644,8 +712,7 @@ export function createMcpServer() {
   });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
+    const tools = [
         {
           name: 'ensure_agent',
           description: 'Get-or-create an agent by name (useful when the MCP client does not know agentId)',
@@ -1146,7 +1213,9 @@ export function createMcpServer() {
             required: ['matchId', 'action'],
           },
         },
-      ],
+    ];
+    return {
+      tools: tools.map(enrichToolMetadata) as any,
     };
   });
 

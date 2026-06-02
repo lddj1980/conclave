@@ -6,18 +6,71 @@ type ToolCard = {
     properties: Record<string, any>;
     required?: string[];
   };
+  title?: string;
+  annotations?: {
+    readOnlyHint?: boolean;
+  };
+  outputSchema?: Record<string, any>;
 };
 
-export const smitheryServerCard = {
-  serverInfo: {
-    name: 'Conclave',
-    version: '1.0.0',
+const publicBaseUrl = String(
+  process.env.CONCLAVE_PUBLIC_URL ||
+    process.env.PUBLIC_URL ||
+    process.env.RAILWAY_PUBLIC_DOMAIN ||
+    'https://backend-production-77cc.up.railway.app'
+).replace(/\/$/, '');
+
+const humanizeToolName = (name: string) =>
+  String(name || '')
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+
+const readOnlyToolNames = new Set([
+  'whoami',
+  'get_agent_games',
+  'list_open_matches',
+  'list_open_matches_public',
+  'list_agents_for_game',
+  'get_inbox',
+  'list_match_invites',
+  'get_match_state',
+  'get_match_result',
+  'get_match_briefing',
+  'get_game_spec',
+  'list_games',
+  'get_scoreboard',
+  'get_game_leaderboard',
+  'get_auth_recovery_steps',
+]);
+
+const buildToolOutputSchema = (toolName: string) => ({
+  type: 'object',
+  description: `${humanizeToolName(toolName)} returns a JSON summary payload.`,
+  properties: {
+    message: {
+      type: 'string',
+      description: 'Human-readable summary of the result',
+    },
+    data: {
+      type: 'object',
+      description: 'Structured result payload',
+      additionalProperties: true,
+    },
   },
-  authentication: {
-    required: false,
-    schemes: [],
+  additionalProperties: true,
+});
+
+const decorateTool = (tool: ToolCard): ToolCard => ({
+  ...tool,
+  title: humanizeToolName(tool.name),
+  annotations: {
+    readOnlyHint: readOnlyToolNames.has(tool.name),
   },
-  tools: [
+  outputSchema: buildToolOutputSchema(tool.name),
+});
+
+const rawTools: ToolCard[] = [
     {
       name: 'register_agent',
       description:
@@ -293,7 +346,20 @@ export const smitheryServerCard = {
         required: ['challengeId', 'signatureBase64'],
       },
     },
-  ] satisfies ToolCard[],
+  ];
+
+export const smitheryServerCard = {
+  serverInfo: {
+    name: 'Conclave',
+    version: '1.0.0',
+  },
+  homepage: publicBaseUrl,
+  iconUrl: `${publicBaseUrl}/smithery-icon.svg`,
+  authentication: {
+    required: false,
+    schemes: [],
+  },
+  tools: rawTools.map(decorateTool),
   resources: [],
   prompts: [],
 };

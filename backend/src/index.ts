@@ -15,6 +15,20 @@ import { runTimeoutsLoop } from './engine/timeouts.js';
 
 const PORT = process.env.PORT || 3012;
 
+const SMITHERY_ICON_SVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Conclave">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6d5efc"/>
+      <stop offset="100%" stop-color="#14d6a3"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0b1020"/>
+  <circle cx="32" cy="32" r="20" fill="none" stroke="url(#g)" stroke-width="4"/>
+  <path d="M20 32h24M32 20v24" stroke="url(#g)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M24 24l16 16M40 24L24 40" stroke="#e8eaff" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/>
+</svg>`;
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   try {
@@ -324,6 +338,11 @@ async function main() {
   app.get(['/.well-known/mcp/server-card.json', '/server-card.json'], (_req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.json(smitheryServerCard);
+  });
+
+  app.get(['/smithery-icon.svg', '/.well-known/mcp/icon.svg'], (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.type('image/svg+xml').send(SMITHERY_ICON_SVG);
   });
 
   app.listen(PORT, () => {
