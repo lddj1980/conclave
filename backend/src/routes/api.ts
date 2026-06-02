@@ -69,6 +69,44 @@ function requireAdminAccess(req: Request) {
   return { ok: true as const, actor: String(req.body?.actor || 'admin') };
 }
 
+function sanitizeAgentForPublicView(agent: any, viewerAgentId?: string | null) {
+  if (!agent) return agent;
+  const {
+    authTokenHash,
+    authTokenExpiresAt,
+    authTokenLastRotatedAt,
+    authTokenLastUsedAt,
+    authKeyAlgorithm,
+    authPublicKeyPem,
+    recoverySeed,
+    ...rest
+  } = agent as any;
+
+  const inventory =
+    viewerAgentId && viewerAgentId === agent.id && Array.isArray(agent.inventory)
+      ? agent.inventory
+      : [];
+
+  return {
+    ...rest,
+    inventory,
+  };
+}
+
+function sanitizeMatchForPublicView(match: any, viewerAgentId?: string | null) {
+  if (!match) return match;
+  return {
+    ...match,
+    participants: Array.isArray(match.participants)
+      ? match.participants.map((participant: any) => ({
+          ...participant,
+          agent: sanitizeAgentForPublicView(participant.agent, viewerAgentId),
+        }))
+      : [],
+    contracts: [],
+  };
+}
+
 // Agents
 router.get('/agents', async (req: Request, res: Response) => {
   try {
@@ -97,7 +135,7 @@ router.get('/agents', async (req: Request, res: Response) => {
 
 router.post('/agents', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
-    const { name, owner, description, subscriptions } = req.body;
+    const { name, owner, description, subscriptions, mcpClientName } = req.body;
     const isHumanRaw = req.body?.isHuman;
     const isHuman =
       isHumanRaw === true ||
@@ -116,6 +154,7 @@ router.post('/agents', sensitiveLimiter, async (req: Request, res: Response) => 
           owner,
           isHuman,
           description,
+          mcpClientName: String(mcpClientName || '').trim() || null,
           scoreboard: {
             create: {},
           },
@@ -307,7 +346,7 @@ router.get('/matches', async (req: Request, res: Response) => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(matches);
+    res.json(matches.map((match) => sanitizeMatchForPublicView(match)));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -378,10 +417,7 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
       ...match,
       participants: match.participants.map((p) => ({
         ...p,
-        agent: {
-          ...p.agent,
-          inventory: agentId && agentId === p.agentId ? p.agent.inventory : [],
-        },
+        agent: sanitizeAgentForPublicView(p.agent, agentId),
       })),
       rounds: match.rounds.map((r) => ({
         ...r,
@@ -398,6 +434,7 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
         })),
       })),
       gameSpec: gameSpecForClient,
+      contracts: agentId ? match.contracts : [],
     };
 
     res.json(publicMatch);

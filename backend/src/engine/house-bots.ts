@@ -1586,7 +1586,10 @@ export async function seedHouseBots() {
  * Scans active matches and plays actions on behalf of House Bots.
  */
 export async function runHouseBotsLoop() {
+  let loopBusy = false;
   setInterval(async () => {
+    if (loopBusy) return;
+    loopBusy = true;
     try {
       const activeMatches = await prisma.match.findMany({
         where: { status: 'in_progress' },
@@ -1608,6 +1611,14 @@ export async function runHouseBotsLoop() {
 
       const gameSpecs = await prisma.gameSpecification.findMany();
       const specMap = new Map(gameSpecs.map(g => [g.key, g]));
+      const allowedActionsMap = new Map<string, string[]>();
+      for (const spec of gameSpecs) {
+        try {
+          allowedActionsMap.set(spec.key, spec.actions ? (JSON.parse(spec.actions) as string[]) : []);
+        } catch (e) {
+          allowedActionsMap.set(spec.key, []);
+        }
+      }
 
       for (const match of activeMatches) {
         const currentRound = match.rounds.find(r => r.roundNumber === match.currentRound);
@@ -1715,7 +1726,7 @@ export async function runHouseBotsLoop() {
           }
 
           // Dynamic strategy/allowed action fallback
-          const allowedActions: string[] = spec ? JSON.parse(spec.actions) : [];
+          const allowedActions: string[] = spec ? (allowedActionsMap.get(spec.key) || []) : [];
           const isPlayer1Pitch = isSequential && participant.role === 'player_1';
 
           if (!action || (!isPlayer1Pitch && !allowedActions.includes(action))) {
@@ -1780,6 +1791,8 @@ export async function runHouseBotsLoop() {
       }
     } catch (err: any) {
       console.error('Error in house bots loop:', err.message);
+    } finally {
+      loopBusy = false;
     }
   }, 1500);
 }

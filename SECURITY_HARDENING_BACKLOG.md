@@ -107,13 +107,13 @@ Acceptance:
 
 ## Wave 3 - Data exposure + CORS
 Priority: `P1`
-Status: `PENDING`
+Status: `DONE`
 
-- [ ] Sanitize `GET /api/matches/:id` by caller role
+- [x] Sanitize `GET /api/matches/:id` by caller role
   - public view: no private payload/inventory-sensitive fields
   - participant/admin view: scoped details only
-- [ ] Sanitize `GET /api/games` to avoid leaking sensitive fields (`codeScript`)
-- [ ] Restrict CORS by environment allowlist
+- [x] Sanitize `GET /api/games` to avoid leaking sensitive fields (`codeScript`)
+- [x] Restrict CORS by environment allowlist
 
 Acceptance:
 - Frontend works in production domains.

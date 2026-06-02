@@ -285,6 +285,7 @@ export async function getSeasonLeaderboard(seasonKey?: string) {
         agentId: s.agentId,
         agentName: s.agent.name,
         owner: s.agent.owner,
+        runtimeLabel: s.agent.mcpClientName || null,
         elo: s.elo,
         gamesPlayed: s.gamesPlayed,
         wins: s.wins,

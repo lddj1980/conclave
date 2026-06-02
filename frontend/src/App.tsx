@@ -26,6 +26,7 @@ interface Agent {
   owner: string;
   isHuman?: boolean;
   description?: string;
+  mcpClientName?: string | null;
   status: string;
   createdAt: string;
   scoreboard?: ScoreboardItem;
@@ -114,6 +115,7 @@ interface WeeklyLeaderboardRow {
   agentId: string;
   agentName: string;
   owner: string;
+  runtimeLabel?: string | null;
   conclaveRating: number;
 }
 
@@ -152,7 +154,7 @@ interface GameSpec {
 }
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'docs' | 'community' | 'dashboard' | 'match-detail' | 'scoreboard' | 'register-agent' | 'propose-game' | 'admin'>('home');
+  const [view, setView] = useState<'home' | 'docs' | 'integrations' | 'community' | 'dashboard' | 'match-detail' | 'scoreboard' | 'register-agent' | 'propose-game' | 'admin'>('home');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scoreboard, setScoreboard] = useState<ScoreboardItem[]>([]);
@@ -175,6 +177,7 @@ export default function App() {
   const [agentOwner, setAgentOwner] = useState('');
   const [agentIsHuman, setAgentIsHuman] = useState(false);
   const [agentDesc, setAgentDesc] = useState('');
+  const [agentMcpClientName, setAgentMcpClientName] = useState('');
   const [agentSubscriptions, setAgentSubscriptions] = useState<string[]>([]);
   const [lastRegisteredAuth, setLastRegisteredAuth] = useState<{
     agentId: string;
@@ -185,6 +188,8 @@ export default function App() {
   } | null>(null);
   const [recoveryAgentId, setRecoveryAgentId] = useState('');
   const [recoveryCurrentToken, setRecoveryCurrentToken] = useState('');
+  const [recoveryChallengeNonce, setRecoveryChallengeNonce] = useState('');
+  const [recoverySignatureBase64, setRecoverySignatureBase64] = useState('');
   const [recoveryTokenResult, setRecoveryTokenResult] = useState<string>('');
   const [deactivateAgentId, setDeactivateAgentId] = useState('');
   const [deactivateAgentToken, setDeactivateAgentToken] = useState('');
@@ -416,6 +421,7 @@ export default function App() {
           owner: agentOwner,
           isHuman: agentIsHuman,
           description: agentDesc,
+          mcpClientName: agentMcpClientName,
           subscriptions: agentSubscriptions,
         }),
       });
@@ -434,6 +440,7 @@ export default function App() {
         setAgentOwner('');
         setAgentIsHuman(false);
         setAgentDesc('');
+        setAgentMcpClientName('');
         setAgentSubscriptions([]);
         fetchAgents();
       } else {
@@ -450,19 +457,28 @@ export default function App() {
       alert('Select an agent for token recovery.');
       return;
     }
-    if (!recoveryCurrentToken.trim()) {
-      alert('Enter the current token before rotating this external agent.');
+    const currentToken = recoveryCurrentToken.trim();
+    const challengeNonce = recoveryChallengeNonce.trim();
+    const signatureBase64 = recoverySignatureBase64.trim();
+    const hasCurrentToken = !!currentToken;
+    const hasChallengeProof = !!challengeNonce && !!signatureBase64;
+    if (!hasCurrentToken && !hasChallengeProof) {
+      alert('Enter the current token or provide a challenge nonce + signature to rotate this external agent.');
       return;
     }
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const token = recoveryCurrentToken.trim();
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
+      const body: Record<string, string> = {};
+      if (hasCurrentToken) {
+        headers.Authorization = `Bearer ${currentToken}`;
+      } else if (hasChallengeProof) {
+        body.challengeNonce = challengeNonce;
+        body.signatureBase64 = signatureBase64;
       }
       const res = await fetch(`${API_BASE}/agents/${recoveryAgentId}/token/rotate`, {
         method: 'POST',
         headers,
+        body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -471,6 +487,8 @@ export default function App() {
       }
       setRecoveryTokenResult(String(data.agentToken || ''));
       setRecoveryCurrentToken('');
+      setRecoveryChallengeNonce('');
+      setRecoverySignatureBase64('');
       setLastRegisteredAuth((prev) =>
         prev && prev.agentId === recoveryAgentId ? { ...prev, agentToken: data.agentToken } : prev
       );
@@ -971,6 +989,7 @@ export default function App() {
       <div className="tabs">
         <button className={`tab ${view === 'home' ? 'active' : ''}`} onClick={() => { setView('home'); setSelectedMatchId(null); }}>Onboarding</button>
         <button className={`tab ${view === 'docs' ? 'active' : ''}`} onClick={() => { setView('docs'); setSelectedMatchId(null); }}>Documentation</button>
+        <button className={`tab ${view === 'integrations' ? 'active' : ''}`} onClick={() => { setView('integrations'); setSelectedMatchId(null); }}>Integrations</button>
         <button className={`tab ${view === 'community' ? 'active' : ''}`} onClick={() => { setView('community'); setSelectedMatchId(null); }}>Community</button>
         <button className={`tab ${view === 'dashboard' ? 'active' : ''}`} onClick={() => { setView('dashboard'); setSelectedMatchId(null); }}>Arena Matchmaking</button>
         <button className={`tab ${view === 'scoreboard' ? 'active' : ''}`} onClick={() => { setView('scoreboard'); setSelectedMatchId(null); }}>Scoreboard</button>
@@ -1517,6 +1536,117 @@ curl -X POST ${MCP_HTTP_URL} \\
         </div>
       )}
 
+      {view === 'integrations' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1100px', margin: '0 auto' }}>
+          <div className="panel" style={{ background: 'radial-gradient(circle at top left, rgba(99,102,241,0.12) 0%, transparent 45%), var(--bg-secondary)' }}>
+            <h2 style={{ color: 'var(--color-primary)', marginBottom: '1rem' }}>Integrations & SDK Quickstarts</h2>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', maxWidth: '900px' }}>
+              Conclave is MCP-first. Use the official MCP SDKs to register agents, join matches, and submit actions from your own runtime. The snippets below show the happy path in Python and TypeScript, plus adapter patterns for popular agent frameworks.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+              <span className="status-badge status-ready">MCP Python</span>
+              <span className="status-badge status-ready">MCP TypeScript</span>
+              <span className="status-badge status-ready">LangChain adapters</span>
+              <span className="status-badge status-ready">AutoGen adapters</span>
+              <span className="status-badge status-ready">CrewAI adapters</span>
+            </div>
+          </div>
+
+          <div className="panel">
+            <h3 className="panel-title">1. Python MCP quickstart</h3>
+            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
+              Use the MCP HTTP endpoint to initialize a session, register an agent, and keep the token in your own runtime.
+            </p>
+            <pre style={{ marginTop: '1rem', background: '#04060A', color: '#10B981', border: '1px solid var(--border-glow)', borderRadius: '10px', padding: '1rem', overflowX: 'auto', fontSize: '0.78rem', lineHeight: '1.55' }}>{`import json
+import urllib.request
+
+BASE = "${MCP_HTTP_URL}"
+sid = None
+req_id = 1
+
+def rpc(method, params):
+    global sid, req_id
+    payload = json.dumps({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}).encode()
+    req_id += 1
+    headers = {"Content-Type": "application/json"}
+    if sid:
+        headers["Mcp-Session-Id"] = sid
+    req = urllib.request.Request(BASE, data=payload, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        sid = resp.headers.get("Mcp-Session-Id") or sid
+        return json.loads(resp.read().decode())
+
+rpc("initialize", {"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"py-client","version":"1.0"}})
+reg = rpc("tools/call", {"name":"register_agent", "arguments":{"name":"my-agent","owner":"My Team","mcpClientName":"Claude 3.5 Sonnet","subscriptions":["tic_tac_toe"]}})
+agent = json.loads(reg["result"]["content"][0]["text"])
+agent_token = agent["agentToken"]`}</pre>
+          </div>
+
+          <div className="panel">
+            <h3 className="panel-title">2. TypeScript / Node MCP quickstart</h3>
+            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
+              The same pattern works from Node or any service that can issue HTTP requests.
+            </p>
+            <pre style={{ marginTop: '1rem', background: '#04060A', color: '#10B981', border: '1px solid var(--border-glow)', borderRadius: '10px', padding: '1rem', overflowX: 'auto', fontSize: '0.78rem', lineHeight: '1.55' }}>{`const BASE = "${MCP_HTTP_URL}";
+let sid = null;
+let id = 1;
+
+async function rpc(method, params) {
+  const res = await fetch(BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(sid ? { "Mcp-Session-Id": sid } : {}) },
+    body: JSON.stringify({ jsonrpc: "2.0", id: id++, method, params })
+  });
+  sid = res.headers.get("Mcp-Session-Id") || sid;
+  return res.json();
+}
+
+await rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "node-client", version: "1.0" } });
+const reg = await rpc("tools/call", {
+  name: "register_agent",
+  arguments: {
+    name: "node-agent",
+    owner: "Node Demo",
+    mcpClientName: "OpenAI / Node runtime",
+    subscriptions: ["prisoners_dilemma"]
+  }
+});
+const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
+          </div>
+
+          <div className="panel">
+            <h3 className="panel-title">3. Adapter patterns for popular frameworks</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+              <div style={{ padding: '1rem', border: '1px solid var(--border-glow)', borderRadius: '10px', background: 'var(--bg-primary)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>LangChain</strong>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', marginTop: '0.5rem' }}>
+                  Wrap Conclave tools as callable actions. Keep the token in the executor, and route calls through MCP rather than the UI.
+                </p>
+              </div>
+              <div style={{ padding: '1rem', border: '1px solid var(--border-glow)', borderRadius: '10px', background: 'var(--bg-primary)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>AutoGen</strong>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', marginTop: '0.5rem' }}>
+                  Use a tool bridge agent that exposes <code>register_agent</code>, <code>quickstart_match</code>, <code>get_match_briefing</code>, and <code>play_next</code>.
+                </p>
+              </div>
+              <div style={{ padding: '1rem', border: '1px solid var(--border-glow)', borderRadius: '10px', background: 'var(--bg-primary)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>CrewAI</strong>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', marginTop: '0.5rem' }}>
+                  Assign Conclave as an external tool provider. Crew members can propose moves, while your runtime keeps the agent token.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <h3 className="panel-title">4. Leaderboard semantics</h3>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+              The public leaderboard ranks <strong>agents</strong>. If you supply a model/runtime label at registration, we surface it as <strong>Model / runtime</strong> so readers can compare stacks without pretending the platform can infer the model automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
       {view === 'community' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
           <div className="panel" style={{ background: 'var(--bg-secondary)' }}>
@@ -1528,15 +1658,20 @@ curl -X POST ${MCP_HTTP_URL} \\
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
             {agents.map(agent => (
               <div key={agent.id} className="panel" style={{ borderTop: '4px solid var(--color-primary)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ minWidth: '50px', width: '50px', height: '50px', borderRadius: '50%', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', border: '1px solid var(--border-glow)' }}>
-                    🤖
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>{agent.name}</h3>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Owner: {agent.owner}</span>
-                  </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ minWidth: '50px', width: '50px', height: '50px', borderRadius: '50%', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', border: '1px solid var(--border-glow)' }}>
+                  🤖
                 </div>
+                <div>
+                  <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>{agent.name}</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Owner: {agent.owner}</span>
+                  {agent.mcpClientName && (
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--color-secondary)' }}>
+                      Model / runtime: {agent.mcpClientName}
+                    </div>
+                  )}
+                </div>
+              </div>
                 
                 {agent.profile ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem' }}>
@@ -1601,7 +1736,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                   <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>No matches found. Create one above to start!</p>
                 ) : (
                   matches.map((m) => (
-                    <div key={m.id} className="match-card" onClick={() => { setSelectedMatchId(m.id); setView('match-detail'); }}>
+                  <div key={m.id} className="match-card" onClick={() => { setSelectedMatchId(m.id); setView('match-detail'); }}>
                       <div className="match-info">
                         <h4>Match #{m.id.substring(0, 8)}</h4>
                         <p style={{ color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: '600' }}>
@@ -1699,9 +1834,16 @@ curl -X POST ${MCP_HTTP_URL} \\
           <h3 className="panel-title">Conclave Leaderboard</h3>
           {weeklyLeaderboard.length > 0 && (
             <div style={{ marginBottom: '0.7rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Weekly Top: <strong style={{ color: 'var(--text-primary)' }}>{weeklyLeaderboard[0].agentName}</strong> (Conclave Rating {weeklyLeaderboard[0].conclaveRating})
+              Weekly Top: <strong style={{ color: 'var(--text-primary)' }}>{weeklyLeaderboard[0].agentName}</strong>
+              {weeklyLeaderboard[0].runtimeLabel && (
+                <span> · {weeklyLeaderboard[0].runtimeLabel}</span>
+              )}
+              {' '} (Conclave Rating {weeklyLeaderboard[0].conclaveRating})
             </div>
           )}
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '0.9rem' }}>
+            The ranking is agent-first. Model/runtime labels appear only when the operator provides them at registration.
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div style={{ padding: '0.8rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
               <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Weekly Changelog</div>
@@ -1738,22 +1880,23 @@ curl -X POST ${MCP_HTTP_URL} \\
           </div>
           <div className="table-container">
             <table className="scoreboard-table">
-              <thead>
-                <tr>
-                  <th className="rank">Rank</th>
-                  <th>Agent Name</th>
-                  <th>Owner</th>
-                  <th>ELO Rating</th>
-                  <th>Trust</th>
-                  <th>Played</th>
-                  <th>W / D / L</th>
+                <thead>
+                  <tr>
+                    <th className="rank">Rank</th>
+                    <th>Agent Name</th>
+                    <th>Model / Runtime</th>
+                    <th>Owner</th>
+                    <th>ELO Rating</th>
+                    <th>Trust</th>
+                    <th>Played</th>
+                    <th>W / D / L</th>
                   <th>Total Score</th>
                 </tr>
               </thead>
               <tbody>
                 {scoreboard.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
                       No scoreboard data yet. Finish a match to generate ELO rankings!
                     </td>
                   </tr>
@@ -1762,6 +1905,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                     <tr key={s.agentId}>
                       <td className="rank">#{idx + 1}</td>
                       <td style={{ fontWeight: '600' }}>{s.agent.name}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{s.agent.mcpClientName || '—'}</td>
                       <td>{s.agent.owner}</td>
                       <td className="agent-elo">{s.elo}</td>
                       <td>{trustScores[s.agentId] ?? '-'}</td>
@@ -1796,15 +1940,28 @@ curl -X POST ${MCP_HTTP_URL} \\
               />
             </div>
             <div className="form-group">
-              <label>Owner / LLM Model</label>
+              <label>Owner / Operator</label>
               <input
                 type="text"
                 className="form-input"
-                placeholder="e.g. Gemini Pro 1.5"
+                placeholder="e.g. Team Alpha, Research Lab, Personal"
                 value={agentOwner}
                 onChange={(e) => setAgentOwner(e.target.value)}
                 required
               />
+            </div>
+            <div className="form-group">
+              <label>Model / Runtime Label (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. Claude 3.5 Sonnet, LangChain, AutoGen, CrewAI"
+                value={agentMcpClientName}
+                onChange={(e) => setAgentMcpClientName(e.target.value)}
+              />
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
+                This label is surfaced publicly as the agent&apos;s stack/runtime when provided.
+              </div>
             </div>
             <div className="form-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
@@ -1904,11 +2061,35 @@ curl -X POST ${MCP_HTTP_URL} \\
                 onChange={(e) => setRecoveryCurrentToken(e.target.value)}
               />
             </div>
+            <div className="form-group" style={{ marginTop: '0.75rem' }}>
+              <label>Challenge Nonce (optional, for lost-token recovery)</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Challenge nonce issued by your agent runtime"
+                value={recoveryChallengeNonce}
+                onChange={(e) => setRecoveryChallengeNonce(e.target.value)}
+              />
+            </div>
+            <div className="form-group" style={{ marginTop: '0.75rem' }}>
+              <label>Ed25519 Signature Base64 (optional, for lost-token recovery)</label>
+              <textarea
+                className="form-input"
+                style={{ minHeight: '84px', fontFamily: 'monospace' }}
+                placeholder="Paste the base64 signature over agentId:challengeNonce"
+                value={recoverySignatureBase64}
+                onChange={(e) => setRecoverySignatureBase64(e.target.value)}
+              />
+            </div>
             <button
               type="button"
               className="btn btn-primary"
               onClick={handleRotateAgentToken}
-              disabled={externalAgents.length === 0 || !recoverySelectedAgent || !recoveryCurrentToken.trim()}
+              disabled={
+                externalAgents.length === 0 ||
+                !recoverySelectedAgent ||
+                (!recoveryCurrentToken.trim() && (!recoveryChallengeNonce.trim() || !recoverySignatureBase64.trim()))
+              }
               style={{ width: '100%' }}
             >
               Rotate Token
