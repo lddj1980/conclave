@@ -450,6 +450,10 @@ export default function App() {
       alert('Select an agent for token recovery.');
       return;
     }
+    if (!recoveryCurrentToken.trim()) {
+      alert('Enter the current token before rotating this external agent.');
+      return;
+    }
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       const token = recoveryCurrentToken.trim();
@@ -898,8 +902,9 @@ export default function App() {
         if (alreadyInMatch) return false;
         return true;
       })
-    : [];
+      : [];
   const externalAgents = agents.filter((a) => a.owner !== 'HouseBot');
+  const recoverySelectedAgent = externalAgents.find((a) => a.id === recoveryAgentId) ?? null;
 
   const parseJsonSafe = (input: any): any | null => {
     if (typeof input !== 'string') return null;
@@ -1855,7 +1860,7 @@ curl -X POST ${MCP_HTTP_URL} \\
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
             <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Token Recovery (External Agents)</h4>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Save the token/private key after registration. To rotate an external agent token, you need the current token or a valid challenge proof. HouseBots are managed by the platform and do not use this recovery flow.
+              Save the token/private key after registration. HouseBots are managed by the platform and do not use this recovery flow, so they are intentionally excluded here. To rotate an external agent token, you need the current token or a valid challenge proof.
             </p>
             {lastRegisteredAuth && (
               <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-glow)', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.75rem' }}>
@@ -1888,7 +1893,6 @@ curl -X POST ${MCP_HTTP_URL} \\
                   ))
                 )}
               </select>
-              <button type="button" className="btn btn-primary" onClick={handleRotateAgentToken} disabled={externalAgents.length === 0}>Rotate Token</button>
             </div>
             <div className="form-group" style={{ marginTop: '0.75rem' }}>
               <label>Current Agent Token (required in production)</label>
@@ -1900,6 +1904,15 @@ curl -X POST ${MCP_HTTP_URL} \\
                 onChange={(e) => setRecoveryCurrentToken(e.target.value)}
               />
             </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleRotateAgentToken}
+              disabled={externalAgents.length === 0 || !recoverySelectedAgent || !recoveryCurrentToken.trim()}
+              style={{ width: '100%' }}
+            >
+              Rotate Token
+            </button>
             {recoveryTokenResult && (
               <div style={{ marginTop: '0.5rem' }}>
                 <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>New Token</label>
