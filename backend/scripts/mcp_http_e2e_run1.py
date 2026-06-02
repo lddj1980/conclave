@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 import json
+import os
 import time
+import tempfile
 import urllib.request
 import urllib.error
 from pathlib import Path
 
 BASE_URL = "https://backend-production-77cc.up.railway.app/mcp"
-OUT_STATE = Path(__file__).resolve().parent / "mcp_test_agent_state.json"
+OUT_STATE = Path(
+    os.environ.get("CONCLAVE_E2E_STATE_PATH")
+    or Path(tempfile.gettempdir()) / "conclave" / "mcp_test_agent_state.json"
+)
 
 
 class McpHttpClient:
@@ -72,6 +77,7 @@ class McpHttpClient:
 
 
 def main():
+    OUT_STATE.parent.mkdir(parents=True, exist_ok=True)
     c = McpHttpClient(BASE_URL)
     init = c.initialize()
     print("initialize ok:", init.get("result", {}).get("serverInfo"))

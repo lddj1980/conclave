@@ -29,7 +29,21 @@ async function main() {
   const dump = JSON.parse(raw) as Dump;
 
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe('TRUNCATE TABLE "AgentPerformanceSnapshot", "Action", "Round", "MatchLog", "MatchParticipant", "Match", "AgentProfile", "Scoreboard", "GameSpecification", "Season", "Agent" RESTART IDENTITY CASCADE;');
+    await tx.$executeRaw`
+      TRUNCATE TABLE
+        "AgentPerformanceSnapshot",
+        "Action",
+        "Round",
+        "MatchLog",
+        "MatchParticipant",
+        "Match",
+        "AgentProfile",
+        "Scoreboard",
+        "GameSpecification",
+        "Season",
+        "Agent"
+      RESTART IDENTITY CASCADE;
+    `;
 
     if (dump.agents.length) {
       await tx.agent.createMany({ data: dump.agents, skipDuplicates: true });

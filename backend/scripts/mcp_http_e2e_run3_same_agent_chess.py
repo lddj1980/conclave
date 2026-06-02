@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 import json
+import os
 import time
+import tempfile
 import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://backend-production-77cc.up.railway.app/mcp"
-IN_STATE = Path(__file__).resolve().parent / "mcp_test_agent_state.json"
+IN_STATE = Path(
+    os.environ.get("CONCLAVE_E2E_STATE_PATH")
+    or Path(tempfile.gettempdir()) / "conclave" / "mcp_test_agent_state.json"
+)
 
 
 class McpHttpClient:

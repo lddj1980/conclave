@@ -141,3 +141,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Security hygiene artifacts
+backend/prisma/legacy-agent-bootstrap-tokens.json
+backend/prisma/legacy-agent-bootstrap-tokens-*.json
+backend/scripts/mcp_test_agent_state.json

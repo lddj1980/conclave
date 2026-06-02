@@ -1,6 +1,7 @@
 import prisma from '../src/db.js';
 import { createAgentToken, hashAgentToken, computeTokenExpiry } from '../src/security/agent-token.js';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 async function main() {
@@ -24,13 +25,14 @@ async function main() {
 
   for (const a of legacyAgents) {
     const token = createAgentToken();
-    await prisma.$executeRawUnsafe(
-      'UPDATE "Agent" SET "authTokenHash" = $1, "authTokenLastRotatedAt" = $2, "authTokenExpiresAt" = $3 WHERE "id" = $4',
-      hashAgentToken(token),
-      now,
-      expiry,
-      a.id
-    );
+    await prisma.agent.update({
+      where: { id: a.id },
+      data: {
+        authTokenHash: hashAgentToken(token),
+        authTokenLastRotatedAt: now,
+        authTokenExpiresAt: expiry,
+      },
+    });
     out.push({
       id: a.id,
       name: a.name,
@@ -40,11 +42,19 @@ async function main() {
     });
   }
 
-  const outPath = path.resolve(process.cwd(), 'prisma', 'legacy-agent-bootstrap-tokens.json');
+  const outDir = process.env.CONCLAVE_BOOTSTRAP_EXPORT_DIR
+    ? path.resolve(process.env.CONCLAVE_BOOTSTRAP_EXPORT_DIR)
+    : path.join(os.tmpdir(), 'conclave', 'bootstrap-exports');
+  await fs.mkdir(outDir, { recursive: true });
+
+  const outPath = path.join(
+    outDir,
+    `legacy-agent-bootstrap-tokens-${now.toISOString().replace(/[:.]/g, '-')}.json`
+  );
   await fs.writeFile(outPath, JSON.stringify({ generatedAt: now.toISOString(), agents: out }, null, 2), 'utf8');
 
   console.log(`Migrated ${out.length} legacy agents.`);
-  console.log(`Bootstrap tokens written to: ${outPath}`);
+  console.log(`Bootstrap tokens written outside the repo to: ${outPath}`);
 }
 
 main()
@@ -55,4 +65,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

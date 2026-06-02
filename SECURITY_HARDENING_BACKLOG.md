@@ -123,7 +123,7 @@ Acceptance:
 
 ## Wave 4 - DoS and infra hardening
 Priority: `P1`
-Status: `IN_PROGRESS`
+Status: `DONE`
 
 - [x] Add HTTP MCP session TTL + periodic GC + per-IP session cap
 - [x] Add TTL cleanup to in-memory rate limiter
@@ -138,12 +138,12 @@ Acceptance:
 
 ## Wave 5 - Secrets hygiene + key rotation
 Priority: `P1`
-Status: `PENDING`
+Status: `DONE`
 
-- [ ] Remove bootstrap token artifacts from repo/runtime distribution
-- [ ] Rotate all possibly exposed tokens
-- [ ] Add secret scanning in CI
-- [ ] Strengthen `.gitignore` + env/secret manager policy docs
+- [x] Remove bootstrap token artifacts from repo/runtime distribution
+- [x] Rotate all possibly exposed tokens
+- [x] Add secret scanning in CI
+- [x] Strengthen `.gitignore` + env/secret manager policy docs
 
 Acceptance:
 - No plaintext bootstrap secrets in repository or artifacts.
@@ -198,6 +198,21 @@ Tradeoffs: `Not shared across replicas; Redis will still be the production upgra
 
 ---
 
+### DL-004 - Secret artifact handling
+Date: `2026-06-02`
+Status: `DECIDED`
+
+Options:
+1. Keep plaintext bootstrap outputs under `backend/prisma`
+2. Write secret exports only outside the repo and rotate the in-db tokens immediately
+3. Remove all token export utilities entirely
+
+Chosen: `Write secret exports only outside the repo, rotate the legacy tokens now, and protect the repo with CI secret scanning`
+Reasoning: `Preserves the one-time migration workflow without distributing plaintext secrets in source control or build artifacts.`
+Tradeoffs: `Operators need to know where temp exports land, but the environment variable override keeps the workflow controllable.`
+
+---
+
 ## 6) Work Board (Execution Tracker)
 
 Legend: `PENDING` | `IN_PROGRESS` | `DONE` | `BLOCKED`
@@ -216,8 +231,8 @@ Legend: `PENDING` | `IN_PROGRESS` | `DONE` | `BLOCKED`
 | SEC-010 | MCP session TTL + GC + limits | 4 | P1 | DONE | Core Platform | HTTP MCP sessions now expire, GC periodically, and cap at 200 |
 | SEC-011 | Rate limiter TTL cleanup / Redis plan | 4 | P1 | DONE | Core Platform | In-memory cleanup added; Redis remains the next step |
 | SEC-012 | Remove `$executeRawUnsafe` | 4 | P1 | DONE | Core Platform | Replaced unsafe raw SQL with Prisma-safe updates across API/MCP |
-| SEC-013 | Secrets purge + token rotation | 5 | P1 | PENDING | TBD | |
-| SEC-014 | CI secret scanning | 5 | P1 | PENDING | TBD | |
+| SEC-013 | Secrets purge + token rotation | 5 | P1 | DONE | Core Platform | Removed plaintext bootstrap artifacts, rotated legacy tokens, and moved exports outside the repo |
+| SEC-014 | CI secret scanning | 5 | P1 | DONE | Core Platform | Added GitHub Actions secret scan with Gitleaks |
 
 ### P0 Auth Scope Note
 
