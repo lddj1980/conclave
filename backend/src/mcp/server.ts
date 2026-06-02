@@ -492,13 +492,14 @@ export function createMcpServer() {
 
   const issueTokenForAgent = async (agentId: string) => {
     const plainToken = createAgentToken();
-    await prisma.$executeRawUnsafe(
-      'UPDATE "Agent" SET "authTokenHash" = $1, "authTokenLastRotatedAt" = $2, "authTokenExpiresAt" = $3 WHERE "id" = $4',
-      hashAgentToken(plainToken),
-      new Date(),
-      computeTokenExpiry(),
-      agentId
-    );
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        authTokenHash: hashAgentToken(plainToken),
+        authTokenLastRotatedAt: new Date(),
+        authTokenExpiresAt: computeTokenExpiry(),
+      },
+    });
     return plainToken;
   };
 
@@ -533,13 +534,10 @@ export function createMcpServer() {
     }
     await prisma.agent.update({
       where: { id: agent.id },
-      data: {},
+      data: {
+        authTokenLastUsedAt: new Date(),
+      },
     });
-    await prisma.$executeRawUnsafe(
-      'UPDATE "Agent" SET "authTokenLastUsedAt" = $1 WHERE "id" = $2',
-      new Date(),
-      agent.id
-    );
     await bindSessionToAgent({ id: agent.id, name: agent.name }, agent.id);
     sessionAuthAgentId = agent.id;
     return { id: agent.id, name: agent.name };
@@ -1296,12 +1294,13 @@ export function createMcpServer() {
               usedPk = kp.publicKeyPem;
               generatedPrivateKeyPem = kp.privateKeyPem;
             }
-            await prisma.$executeRawUnsafe(
-              'UPDATE "Agent" SET "authKeyAlgorithm" = $1, "authPublicKeyPem" = $2 WHERE "id" = $3',
-              'ed25519',
-              usedPk,
-              res.agent.id
-            );
+            await prisma.agent.update({
+              where: { id: res.agent.id },
+              data: {
+                authKeyAlgorithm: 'ed25519',
+                authPublicKeyPem: usedPk,
+              },
+            });
             currentAgent = await prisma.agent.findUnique({
               where: { id: res.agent.id },
               select: { authTokenHash: true, authPublicKeyPem: true, owner: true, name: true },
@@ -1317,12 +1316,13 @@ export function createMcpServer() {
 
           const providedPk = String((args as any)?.authPublicKeyPem || '').trim();
           if (!res.created && tokenValid && providedPk && !currentAgent?.authPublicKeyPem) {
-            await prisma.$executeRawUnsafe(
-              'UPDATE "Agent" SET "authKeyAlgorithm" = $1, "authPublicKeyPem" = $2 WHERE "id" = $3',
-              'ed25519',
-              providedPk,
-              res.agent.id
-            );
+            await prisma.agent.update({
+              where: { id: res.agent.id },
+              data: {
+                authKeyAlgorithm: 'ed25519',
+                authPublicKeyPem: providedPk,
+              },
+            });
             currentAgent = await prisma.agent.findUnique({
               where: { id: res.agent.id },
               select: { authTokenHash: true, authPublicKeyPem: true, owner: true, name: true },
@@ -1761,12 +1761,13 @@ export function createMcpServer() {
               pk = kp.publicKeyPem;
               quickstartGeneratedPrivateKeyPem = kp.privateKeyPem;
             }
-            await prisma.$executeRawUnsafe(
-              'UPDATE "Agent" SET "authKeyAlgorithm" = $1, "authPublicKeyPem" = $2 WHERE "id" = $3',
-              'ed25519',
-              pk,
-              agentRes.agent.id
-            );
+            await prisma.agent.update({
+              where: { id: agentRes.agent.id },
+              data: {
+                authKeyAlgorithm: 'ed25519',
+                authPublicKeyPem: pk,
+              },
+            });
             quickstartIssuedToken = await issueTokenForAgent(agentRes.agent.id);
           }
 

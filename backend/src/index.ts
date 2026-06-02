@@ -14,6 +14,8 @@ import { seedHouseBots, runHouseBotsLoop } from './engine/house-bots.js';
 import { runTimeoutsLoop } from './engine/timeouts.js';
 
 const PORT = process.env.PORT || 3012;
+const HTTP_MCP_SESSION_TTL_MS = 30 * 60 * 1000;
+const HTTP_MCP_SESSION_MAX = 200;
 
 const SMITHERY_ICON_SVG = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Conclave">
@@ -221,16 +223,65 @@ async function main() {
     }
   >();
 
+  const closeHttpSession = async (sessionId: string) => {
+    const session = httpSessions.get(sessionId);
+    if (!session) return;
+    httpSessions.delete(sessionId);
+    try {
+      await session.transport.close();
+    } catch (error) {
+      console.error('Failed to close MCP HTTP session', sessionId, error);
+    }
+    try {
+      await session.server.close();
+    } catch (error) {
+      console.error('Failed to close MCP HTTP session server', sessionId, error);
+    }
+  };
+
+  const pruneHttpSessions = async () => {
+    const now = Date.now();
+    const expired: string[] = [];
+    for (const [sessionId, session] of httpSessions.entries()) {
+      if (now - session.lastSeenAt > HTTP_MCP_SESSION_TTL_MS) {
+        expired.push(sessionId);
+      }
+    }
+    for (const sessionId of expired) {
+      await closeHttpSession(sessionId);
+    }
+
+    if (httpSessions.size <= HTTP_MCP_SESSION_MAX) return;
+    const oldest = [...httpSessions.entries()]
+      .sort((a, b) => a[1].lastSeenAt - b[1].lastSeenAt)
+      .slice(0, Math.max(0, httpSessions.size - HTTP_MCP_SESSION_MAX));
+    for (const [sessionId] of oldest) {
+      await closeHttpSession(sessionId);
+    }
+  };
+
+  const sessionGcTimer = setInterval(() => {
+    void pruneHttpSessions().catch((error) => console.error('MCP HTTP session GC failed', error));
+  }, 5 * 60 * 1000);
+  sessionGcTimer.unref?.();
+
   const getSessionIdHeader = (req: Request) => {
     const h = req.header('mcp-session-id') || req.header('Mcp-Session-Id');
     return h ? String(h) : null;
   };
 
   const createHttpSession = async () => {
+    await pruneHttpSessions();
     const server = createMcpServer();
     const transport = new StreamableHttpTransport();
     await server.connect(transport as any);
     const sessionId = randomUUID();
+    if (httpSessions.size >= HTTP_MCP_SESSION_MAX) {
+      const oldest = [...httpSessions.entries()].sort((a, b) => a[1].lastSeenAt - b[1].lastSeenAt)[0];
+      if (oldest) {
+        await closeHttpSession(oldest[0]);
+      }
+    }
     httpSessions.set(sessionId, { server, transport, lastSeenAt: Date.now() });
     return { sessionId, server, transport };
   };
@@ -291,8 +342,7 @@ async function main() {
     if (!sessionId) return res.status(400).send('Missing Mcp-Session-Id');
     const session = httpSessions.get(sessionId);
     if (!session) return res.status(404).send('Session not found');
-    await session.transport.close();
-    httpSessions.delete(sessionId);
+    await closeHttpSession(sessionId);
     res.status(204).end();
   });
 

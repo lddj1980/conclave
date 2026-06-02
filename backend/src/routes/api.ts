@@ -122,13 +122,14 @@ router.post('/agents', sensitiveLimiter, async (req: Request, res: Response) => 
         },
         include: { scoreboard: true },
       });
-      await tx.$executeRawUnsafe(
-        'UPDATE "Agent" SET "authTokenHash" = $1, "authTokenLastRotatedAt" = $2, "authTokenExpiresAt" = $3 WHERE "id" = $4',
-        hashAgentToken(plainToken),
-        new Date(),
-        computeTokenExpiry(),
-        created.id
-      );
+      await tx.agent.update({
+        where: { id: created.id },
+        data: {
+          authTokenHash: hashAgentToken(plainToken),
+          authTokenLastRotatedAt: new Date(),
+          authTokenExpiresAt: computeTokenExpiry(),
+        },
+      });
 
       if (Array.isArray(subscriptions) && subscriptions.length > 0) {
         const uniqueGames = [...new Set(subscriptions.map((g: any) => String(g).trim()).filter(Boolean))];
@@ -182,15 +183,12 @@ router.post('/agents/:id/token/rotate', authLimiter, async (req: Request, res: R
     const token = createAgentToken();
     await prisma.agent.update({
       where: { id },
-      data: {},
+      data: {
+        authTokenHash: hashAgentToken(token),
+        authTokenLastRotatedAt: new Date(),
+        authTokenExpiresAt: computeTokenExpiry(),
+      },
     });
-    await prisma.$executeRawUnsafe(
-      'UPDATE "Agent" SET "authTokenHash" = $1, "authTokenLastRotatedAt" = $2, "authTokenExpiresAt" = $3 WHERE "id" = $4',
-      hashAgentToken(token),
-      new Date(),
-      computeTokenExpiry(),
-      id
-    );
 
     res.json({ agentId: id, agentName: agent.name, agentToken: token });
   } catch (error: any) {

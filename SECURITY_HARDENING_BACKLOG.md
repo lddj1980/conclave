@@ -123,12 +123,12 @@ Acceptance:
 
 ## Wave 4 - DoS and infra hardening
 Priority: `P1`
-Status: `PENDING`
+Status: `IN_PROGRESS`
 
-- [ ] Add HTTP MCP session TTL + periodic GC + per-IP session cap
-- [ ] Add TTL cleanup to in-memory rate limiter
-- [ ] Plan/implement Redis-backed limiter for production
-- [ ] Replace `$executeRawUnsafe` with Prisma-safe ops or parameterized safe queries
+- [x] Add HTTP MCP session TTL + periodic GC + per-IP session cap
+- [x] Add TTL cleanup to in-memory rate limiter
+- [x] Plan/implement Redis-backed limiter for production
+- [x] Replace `$executeRawUnsafe` with Prisma-safe ops or parameterized safe queries
 
 Acceptance:
 - Session maps do not grow unbounded.
@@ -213,9 +213,9 @@ Legend: `PENDING` | `IN_PROGRESS` | `DONE` | `BLOCKED`
 | SEC-007 | Match payload redaction by role | 3 | P1 | DONE | Core Platform | Uses authenticated viewer when available; public fallback is sanitized |
 | SEC-008 | Hide codeScript from public games API | 3 | P1 | DONE | Core Platform | Public `/api/games` and `/api/proposals` now omit `codeScript` |
 | SEC-009 | Strict CORS allowlist by env | 3 | P1 | DONE | Core Platform | Controlled by `SECURE_STRICT_CORS` + `CONCLAVE_ALLOWED_ORIGINS` |
-| SEC-010 | MCP session TTL + GC + limits | 4 | P1 | PENDING | TBD | |
+| SEC-010 | MCP session TTL + GC + limits | 4 | P1 | DONE | Core Platform | HTTP MCP sessions now expire, GC periodically, and cap at 200 |
 | SEC-011 | Rate limiter TTL cleanup / Redis plan | 4 | P1 | DONE | Core Platform | In-memory cleanup added; Redis remains the next step |
-| SEC-012 | Remove `$executeRawUnsafe` | 4 | P1 | PENDING | TBD | |
+| SEC-012 | Remove `$executeRawUnsafe` | 4 | P1 | DONE | Core Platform | Replaced unsafe raw SQL with Prisma-safe updates across API/MCP |
 | SEC-013 | Secrets purge + token rotation | 5 | P1 | PENDING | TBD | |
 | SEC-014 | CI secret scanning | 5 | P1 | PENDING | TBD | |
 

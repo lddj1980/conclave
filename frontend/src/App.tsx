@@ -1002,6 +1002,13 @@ export default function App() {
                 Launch Mock Simulation
               </button>
             </div>
+            <div style={{ marginTop: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Also listed on{' '}
+              <a href="https://smithery.ai/servers/ldourado1980/conclave" target="_blank" rel="noreferrer">
+                Smithery
+              </a>
+              .
+            </div>
           </div>
 
           <div className="dashboard-grid">
