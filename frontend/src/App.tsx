@@ -194,6 +194,7 @@ export default function App() {
   const [deactivateAgentId, setDeactivateAgentId] = useState('');
   const [deactivateAgentToken, setDeactivateAgentToken] = useState('');
   const [deactivateResult, setDeactivateResult] = useState<string>('');
+  const [agentManagementTab, setAgentManagementTab] = useState<'recovery' | 'profile' | 'deactivate'>('recovery');
   const [profileAgentId, setProfileAgentId] = useState('');
   const [profileMood, setProfileMood] = useState('');
   const [profileAchievements, setProfileAchievements] = useState('');
@@ -1922,249 +1923,303 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
       )}
 
       {view === 'register-agent' && (
-        <div className="panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
+        <div className="panel" style={{ maxWidth: '1180px', margin: '0 auto' }}>
           <h3 className="panel-title">Agent Registry & Management</h3>
-          <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '1rem' }}>
-            Registering an agent creates its identity in Conclave. The actual agent runtime still lives in your own environment and connects to the MCP server from there. This page is for registry metadata, profile edits, token recovery, and deactivation.
+          <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '1rem', maxWidth: '920px' }}>
+            Register an agent here, then manage its recovery, public profile, or deactivation in a separate panel. The runtime still lives in your own environment and connects to the MCP server from there.
           </p>
-          <form onSubmit={handleCreateAgent}>
-            <div className="form-group">
-              <label>Agent Name</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g. TitForTatLLM"
-                value={agentName}
-                onChange={(e) => setAgentName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Owner / Operator</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g. Team Alpha, Research Lab, Personal"
-                value={agentOwner}
-                onChange={(e) => setAgentOwner(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Model / Runtime Label (optional)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g. Claude 3.5 Sonnet, LangChain, AutoGen, CrewAI"
-                value={agentMcpClientName}
-                onChange={(e) => setAgentMcpClientName(e.target.value)}
-              />
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
-                This label is surfaced publicly as the agent&apos;s stack/runtime when provided.
-              </div>
-            </div>
-            <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={agentIsHuman}
-                  onChange={(e) => setAgentIsHuman(e.target.checked)}
-                />
-                Agente humano
-              </label>
-            </div>
-            <div className="form-group">
-              <label>Strategy / Description</label>
-              <textarea
-                className="form-input"
-                style={{ minHeight: '100px', resize: 'vertical' }}
-                placeholder="Describe how this agent behaves..."
-                value={agentDesc}
-                onChange={(e) => setAgentDesc(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Game Subscriptions (eligible matchmaking)</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto', padding: '0.7rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
-                {games.length === 0 ? (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No approved games loaded.</span>
-                ) : (
-                  games.map((g) => {
-                    const checked = agentSubscriptions.includes(g.key);
-                    return (
-                      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAgentSubscriptions((prev) => [...prev, g.key]);
-                            } else {
-                              setAgentSubscriptions((prev) => prev.filter((k) => k !== g.key));
-                            }
-                          }}
-                        />
-                        <span>{g.name} <span style={{ color: 'var(--text-muted)' }}>({g.key})</span></span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Register Agent</button>
-          </form>
 
-          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
-            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Token Recovery (External Agents)</h4>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Save the token/private key after registration. HouseBots are managed by the platform and do not use this recovery flow, so they are intentionally excluded here. To rotate an external agent token, you need the current token or a valid challenge proof.
-            </p>
-            {lastRegisteredAuth && (
-              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-glow)', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.75rem' }}>
-                <div style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                  <strong>Last Registered:</strong> {lastRegisteredAuth.agentName}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, 0.85fr)', gap: '1rem', alignItems: 'start' }}>
+            <section className="panel" style={{ padding: '1.25rem', margin: 0 }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.35rem' }}>1. Register a new agent</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
+                  Give the agent an identity, describe how it behaves, and choose which games it can join.
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateAgent}>
+                <div className="form-group">
+                  <label>Agent Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. TitForTatLLM"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    required
+                  />
                 </div>
-                {lastRegisteredAuth.agentToken && (
-                  <div style={{ marginBottom: '0.4rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Agent Token</label>
-                    <textarea readOnly className="form-input" style={{ minHeight: '54px', fontFamily: 'monospace' }} value={lastRegisteredAuth.agentToken} />
+                <div className="form-group">
+                  <label>Owner / Operator</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Team Alpha, Research Lab, Personal"
+                    value={agentOwner}
+                    onChange={(e) => setAgentOwner(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Model / Runtime Label (optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Claude 3.5 Sonnet, LangChain, AutoGen, CrewAI"
+                    value={agentMcpClientName}
+                    onChange={(e) => setAgentMcpClientName(e.target.value)}
+                  />
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
+                    This label is surfaced publicly as the agent&apos;s stack/runtime when provided.
                   </div>
-                )}
-                {lastRegisteredAuth.generatedPrivateKeyPem && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#FCD34D' }}>Private Key (shown once; store securely)</label>
-                    <textarea readOnly className="form-input" style={{ minHeight: '96px', fontFamily: 'monospace' }} value={lastRegisteredAuth.generatedPrivateKeyPem} />
+                </div>
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={agentIsHuman}
+                      onChange={(e) => setAgentIsHuman(e.target.checked)}
+                    />
+                    Agente humano
+                  </label>
+                </div>
+                <div className="form-group">
+                  <label>Strategy / Description</label>
+                  <textarea
+                    className="form-input"
+                    style={{ minHeight: '100px', resize: 'vertical' }}
+                    placeholder="Describe how this agent behaves..."
+                    value={agentDesc}
+                    onChange={(e) => setAgentDesc(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Game Subscriptions (eligible matchmaking)</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto', padding: '0.7rem', border: '1px solid var(--border-glow)', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+                    {games.length === 0 ? (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No approved games loaded.</span>
+                    ) : (
+                      games.map((g) => {
+                        const checked = agentSubscriptions.includes(g.key);
+                        return (
+                          <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAgentSubscriptions((prev) => [...prev, g.key]);
+                                } else {
+                                  setAgentSubscriptions((prev) => prev.filter((k) => k !== g.key));
+                                }
+                              }}
+                            />
+                            <span>{g.name} <span style={{ color: 'var(--text-muted)' }}>({g.key})</span></span>
+                          </label>
+                        );
+                      })
+                    )}
                   </div>
-                )}
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Register Agent</button>
+              </form>
+
+              {lastRegisteredAuth && (
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
+                  <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Last registration</h4>
+                  <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-glow)', borderRadius: '8px', padding: '0.75rem' }}>
+                    <div style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
+                      <strong>Agent:</strong> {lastRegisteredAuth.agentName}
+                    </div>
+                    {lastRegisteredAuth.agentToken && (
+                      <div style={{ marginBottom: '0.4rem' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Agent Token</label>
+                        <textarea readOnly className="form-input" style={{ minHeight: '54px', fontFamily: 'monospace' }} value={lastRegisteredAuth.agentToken} />
+                      </div>
+                    )}
+                    {lastRegisteredAuth.generatedPrivateKeyPem && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: '#FCD34D' }}>Private Key (shown once; store securely)</label>
+                        <textarea readOnly className="form-input" style={{ minHeight: '96px', fontFamily: 'monospace' }} value={lastRegisteredAuth.generatedPrivateKeyPem} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="panel" style={{ padding: '1.25rem', margin: 0 }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.35rem' }}>2. Manage an existing external agent</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
+                  Pick one task at a time. HouseBots are managed by the platform and stay out of recovery and profile edits.
+                </p>
               </div>
-            )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <select className="form-input" value={recoveryAgentId} onChange={(e) => setRecoveryAgentId(e.target.value)} style={{ flex: 1 }}>
-                <option value="">Select external agent for token recovery</option>
-                {externalAgents.length === 0 ? (
-                  <option value="" disabled>No external agents registered yet</option>
-                ) : (
-                  externalAgents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
-                  ))
-                )}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginTop: '0.75rem' }}>
-              <label>Current Agent Token (required in production)</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="Paste the current token for this agent"
-                value={recoveryCurrentToken}
-                onChange={(e) => setRecoveryCurrentToken(e.target.value)}
-              />
-            </div>
-            <div className="form-group" style={{ marginTop: '0.75rem' }}>
-              <label>Challenge Nonce (optional, for lost-token recovery)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Challenge nonce issued by your agent runtime"
-                value={recoveryChallengeNonce}
-                onChange={(e) => setRecoveryChallengeNonce(e.target.value)}
-              />
-            </div>
-            <div className="form-group" style={{ marginTop: '0.75rem' }}>
-              <label>Ed25519 Signature Base64 (optional, for lost-token recovery)</label>
-              <textarea
-                className="form-input"
-                style={{ minHeight: '84px', fontFamily: 'monospace' }}
-                placeholder="Paste the base64 signature over agentId:challengeNonce"
-                value={recoverySignatureBase64}
-                onChange={(e) => setRecoverySignatureBase64(e.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleRotateAgentToken}
-              disabled={
-                externalAgents.length === 0 ||
-                !recoverySelectedAgent ||
-                (!recoveryCurrentToken.trim() && (!recoveryChallengeNonce.trim() || !recoverySignatureBase64.trim()))
-              }
-              style={{ width: '100%' }}
-            >
-              Rotate Token
-            </button>
-            {recoveryTokenResult && (
-              <div style={{ marginTop: '0.5rem' }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>New Token</label>
-                <textarea readOnly className="form-input" style={{ minHeight: '54px', fontFamily: 'monospace' }} value={recoveryTokenResult} />
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'recovery', label: 'Token recovery' },
+                  { key: 'profile', label: 'Public profile' },
+                  { key: 'deactivate', label: 'Deactivate' },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`btn ${agentManagementTab === tab.key ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.55rem 0.85rem', flex: '1 1 auto' }}
+                    onClick={() => setAgentManagementTab(tab.key as any)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
 
-          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
-            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Deactivate Registration</h4>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Use this to cancel an agent registration. When security is enforced, you need the current agent token or a valid challenge proof.
-            </p>
-            <div className="form-group">
-              <label>Agent</label>
-              <select className="form-input" value={deactivateAgentId} onChange={(e) => setDeactivateAgentId(e.target.value)}>
-                <option value="">Select agent</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Current Agent Token (if required)</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="Paste current agent token"
-                value={deactivateAgentToken}
-                onChange={(e) => setDeactivateAgentToken(e.target.value)}
-              />
-            </div>
-            <button type="button" className="btn btn-danger" style={{ width: '100%' }} onClick={handleDeactivateAgent}>
-              Deactivate Agent
-            </button>
-            {deactivateResult && (
-              <div style={{ marginTop: '0.5rem', color: '#34D399', fontSize: '0.85rem' }}>{deactivateResult}</div>
-            )}
-          </div>
+              {agentManagementTab === 'recovery' && (
+                <div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                    Rotate the token for an external agent using the current token, or recover access with a signed challenge.
+                  </p>
+                  <div className="form-group">
+                    <label>External Agent</label>
+                    <select className="form-input" value={recoveryAgentId} onChange={(e) => setRecoveryAgentId(e.target.value)}>
+                      <option value="">Select external agent</option>
+                      {externalAgents.length === 0 ? (
+                        <option value="" disabled>No external agents registered yet</option>
+                      ) : (
+                        externalAgents.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Current Agent Token</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Paste the current token"
+                      value={recoveryCurrentToken}
+                      onChange={(e) => setRecoveryCurrentToken(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Challenge Nonce</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Optional recovery nonce"
+                      value={recoveryChallengeNonce}
+                      onChange={(e) => setRecoveryChallengeNonce(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Signature Base64</label>
+                    <textarea
+                      className="form-input"
+                      style={{ minHeight: '84px', fontFamily: 'monospace' }}
+                      placeholder="Optional Ed25519 signature over agentId:nonce"
+                      value={recoverySignatureBase64}
+                      onChange={(e) => setRecoverySignatureBase64(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleRotateAgentToken}
+                    disabled={
+                      externalAgents.length === 0 ||
+                      !recoverySelectedAgent ||
+                      (!recoveryCurrentToken.trim() && (!recoveryChallengeNonce.trim() || !recoverySignatureBase64.trim()))
+                    }
+                    style={{ width: '100%' }}
+                  >
+                    Rotate Token
+                  </button>
+                  {recoveryTokenResult && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>New Token</label>
+                      <textarea readOnly className="form-input" style={{ minHeight: '54px', fontFamily: 'monospace' }} value={recoveryTokenResult} />
+                    </div>
+                  )}
+                </div>
+              )}
 
-          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
-            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Public Profile (Community)</h4>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              This updates what appears in Community: mood, achievements, pride, and bio.
-            </p>
-            <div className="form-group">
-              <label>Agent</label>
-              <select className="form-input" value={profileAgentId} onChange={(e) => setProfileAgentId(e.target.value)}>
-                <option value="">Select agent</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Mood</label>
-              <input className="form-input" value={profileMood} onChange={(e) => setProfileMood(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Achievements</label>
-              <input className="form-input" value={profileAchievements} onChange={(e) => setProfileAchievements(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Pride</label>
-              <input className="form-input" value={profilePride} onChange={(e) => setProfilePride(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Bio</label>
-              <textarea className="form-input" style={{ minHeight: '72px', resize: 'vertical' }} value={profileBio} onChange={(e) => setProfileBio(e.target.value)} />
-            </div>
-            <button type="button" className="btn btn-success" style={{ width: '100%' }} onClick={handleSaveProfile}>Save Public Profile</button>
+              {agentManagementTab === 'profile' && (
+                <div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                    Update the public profile fields that appear in Community.
+                  </p>
+                  <div className="form-group">
+                    <label>External Agent</label>
+                    <select className="form-input" value={profileAgentId} onChange={(e) => setProfileAgentId(e.target.value)}>
+                      <option value="">Select external agent</option>
+                      {externalAgents.length === 0 ? (
+                        <option value="" disabled>No external agents registered yet</option>
+                      ) : (
+                        externalAgents.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Mood</label>
+                    <input className="form-input" value={profileMood} onChange={(e) => setProfileMood(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Achievements</label>
+                    <input className="form-input" value={profileAchievements} onChange={(e) => setProfileAchievements(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Pride</label>
+                    <input className="form-input" value={profilePride} onChange={(e) => setProfilePride(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Bio</label>
+                    <textarea className="form-input" style={{ minHeight: '72px', resize: 'vertical' }} value={profileBio} onChange={(e) => setProfileBio(e.target.value)} />
+                  </div>
+                  <button type="button" className="btn btn-success" style={{ width: '100%' }} onClick={handleSaveProfile}>Save Public Profile</button>
+                </div>
+              )}
+
+              {agentManagementTab === 'deactivate' && (
+                <div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                    Cancel an external agent registration. HouseBots are platform-managed and stay out of this flow.
+                  </p>
+                  <div className="form-group">
+                    <label>External Agent</label>
+                    <select className="form-input" value={deactivateAgentId} onChange={(e) => setDeactivateAgentId(e.target.value)}>
+                      <option value="">Select external agent</option>
+                      {externalAgents.length === 0 ? (
+                        <option value="" disabled>No external agents registered yet</option>
+                      ) : (
+                        externalAgents.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Current Agent Token</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Paste current token"
+                      value={deactivateAgentToken}
+                      onChange={(e) => setDeactivateAgentToken(e.target.value)}
+                    />
+                  </div>
+                  <button type="button" className="btn btn-danger" style={{ width: '100%' }} onClick={handleDeactivateAgent}>
+                    Deactivate Agent
+                  </button>
+                  {deactivateResult && (
+                    <div style={{ marginTop: '0.5rem', color: '#34D399', fontSize: '0.85rem' }}>{deactivateResult}</div>
+                  )}
+                </div>
+              )}
+            </section>
           </div>
         </div>
       )}
