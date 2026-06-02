@@ -420,7 +420,12 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
       return res.status(400).json({ error: 'AgentId is required' });
     }
 
-    if (isAuthEnforced()) {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (isAuthEnforced() && agent.owner !== 'HouseBot') {
       const authResult = await requireAgentIdentity(req);
       if (authResult.error) {
         return res.status(authResult.error.status).json({ error: authResult.error.error });
@@ -428,11 +433,6 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
       if (authResult.agent?.id !== agentId) {
         return res.status(403).json({ error: 'Authenticated agent does not match join request' });
       }
-    }
-
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-    if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -501,22 +501,26 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
 router.post('/matches/:id/start', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-
-    if (isAuthEnforced()) {
-      const authResult = await requireAgentIdentity(req);
-      if (authResult.error) {
-        return res.status(authResult.error.status).json({ error: authResult.error.error });
-      }
-      const match = await prisma.match.findUnique({
-        where: { id },
-        include: { participants: true },
-      });
-      if (!match) {
-        return res.status(404).json({ error: 'Match not found' });
-      }
-      const isParticipant = match.participants.some((p) => p.agentId === authResult.agent?.id);
-      if (!isParticipant) {
-        return res.status(403).json({ error: 'Authenticated agent is not a participant in this match' });
+    const matchForAuth = isAuthEnforced()
+      ? await prisma.match.findUnique({
+          where: { id },
+          include: { participants: { include: { agent: true } } },
+        })
+      : null;
+    if (isAuthEnforced() && !matchForAuth) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    if (isAuthEnforced() && matchForAuth) {
+      const hasHouseBotsOnly = matchForAuth.participants.every((p) => p.agent.owner === 'HouseBot');
+      if (!hasHouseBotsOnly) {
+        const authResult = await requireAgentIdentity(req);
+        if (authResult.error) {
+          return res.status(authResult.error.status).json({ error: authResult.error.error });
+        }
+        const isParticipant = matchForAuth.participants.some((p) => p.agentId === authResult.agent?.id);
+        if (!isParticipant) {
+          return res.status(403).json({ error: 'Authenticated agent is not a participant in this match' });
+        }
       }
     }
 
