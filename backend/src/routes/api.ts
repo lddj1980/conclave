@@ -14,13 +14,59 @@ import {
   getSeasonManifest,
 } from '../engine/season-analytics.js';
 import { createSandbox } from '../engine/sandbox.js';
-import { createAgentToken, hashAgentToken, computeTokenExpiry } from '../security/agent-token.js';
+import { createAgentToken, hashAgentToken, computeTokenExpiry, verifyEd25519Signature } from '../security/agent-token.js';
+import { securityConfig } from '../config/security.js';
+import { extractAgentToken, resolveAgentFromToken, requireAdminTokenConfigured } from '../security/request-auth.js';
 import { validateGameProposal } from '../engine/proposal-validation.js';
 import { runOfficialBenchmark } from '../engine/official-benchmark.js';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 
 const router = Router();
 const sensitiveLimiter = rateLimiter(60, 60000);
+const authLimiter = rateLimiter(30, 60000);
+
+function isAuthEnforced(): boolean {
+  return !!securityConfig.secureAuthEnforced;
+}
+
+function isAdminEnforced(): boolean {
+  return !!securityConfig.secureAdminEnforced;
+}
+
+function unauthorized(message = 'Authentication required') {
+  return { error: message, status: 401 as const };
+}
+
+function forbidden(message = 'Forbidden') {
+  return { error: message, status: 403 as const };
+}
+
+async function requireAgentIdentity(req: Request) {
+  const token = extractAgentToken(req);
+  if (!token) {
+    return { agent: null, error: unauthorized('agentToken is required for this action') };
+  }
+  const agent = await resolveAgentFromToken(token);
+  if (!agent) {
+    return { agent: null, error: unauthorized('Invalid or expired agentToken') };
+  }
+  return { agent, token, error: undefined };
+}
+
+function requireAdminAccess(req: Request) {
+  if (!isAdminEnforced()) return { ok: true as const, actor: String(req.body?.actor || 'admin') };
+  const bearer = extractAgentToken(req) || '';
+  let configuredToken = '';
+  try {
+    configuredToken = requireAdminTokenConfigured();
+  } catch (err: any) {
+    return { ok: false as const, ...forbidden(err?.message || 'Admin API token is not configured') };
+  }
+  if (bearer !== configuredToken) {
+    return { ok: false as const, ...forbidden('Admin token required') };
+  }
+  return { ok: true as const, actor: String(req.body?.actor || 'admin') };
+}
 
 // Agents
 router.get('/agents', async (req: Request, res: Response) => {
@@ -104,12 +150,32 @@ router.post('/agents', sensitiveLimiter, async (req: Request, res: Response) => 
   }
 });
 
-router.post('/agents/:id/token/rotate', sensitiveLimiter, async (req: Request, res: Response) => {
+router.post('/agents/:id/token/rotate', authLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const agent = await prisma.agent.findUnique({ where: { id } });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (isAuthEnforced()) {
+      const token = extractAgentToken(req);
+      const tokenAgent = token ? await resolveAgentFromToken(token) : null;
+      const challengeNonce = String(req.body?.challengeNonce || '').trim();
+      const signatureBase64 = String(req.body?.signatureBase64 || '').trim();
+      const currentTokenOk = !!tokenAgent && tokenAgent.id === agent.id;
+      const signatureOk =
+        !!agent.authPublicKeyPem &&
+        !!challengeNonce &&
+        !!signatureBase64 &&
+        verifyEd25519Signature(`${agent.id}:${challengeNonce}`, signatureBase64, agent.authPublicKeyPem);
+
+      if (!currentTokenOk && !signatureOk) {
+        return res.status(401).json({
+          error: 'Authentication required',
+          message: 'Provide the current agentToken or a valid Ed25519 challenge signature to rotate this token.',
+        });
+      }
     }
 
     const token = createAgentToken();
@@ -134,6 +200,15 @@ router.post('/agents/:id/token/rotate', sensitiveLimiter, async (req: Request, r
 router.post('/agents/:id/subscriptions', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (isAuthEnforced()) {
+      const authResult = await requireAgentIdentity(req);
+      if (authResult.error) {
+        return res.status(authResult.error.status).json({ error: authResult.error.error });
+      }
+      if (authResult.agent?.id !== id) {
+        return res.status(403).json({ error: 'Authenticated agent does not match target agent' });
+      }
+    }
     const gameKeysRaw = req.body?.gameKeys ?? req.body?.gameKey;
     const gameKeys = Array.isArray(gameKeysRaw) ? gameKeysRaw : [gameKeysRaw];
     const normalized = [...new Set(gameKeys.map((g: any) => String(g || '').trim()).filter(Boolean))];
@@ -169,6 +244,15 @@ router.post('/agents/:id/subscriptions', sensitiveLimiter, async (req: Request, 
 router.post('/agents/:id/profile', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (isAuthEnforced()) {
+      const authResult = await requireAgentIdentity(req);
+      if (authResult.error) {
+        return res.status(authResult.error.status).json({ error: authResult.error.error });
+      }
+      if (authResult.agent?.id !== id) {
+        return res.status(403).json({ error: 'Authenticated agent does not match target agent' });
+      }
+    }
     const { mood, achievements, pride, customBio } = req.body;
     const profile = await prisma.agentProfile.upsert({
       where: { agentId: id },
@@ -230,7 +314,10 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Match not found' });
     }
 
-    const agentId = req.query.agentId ? String(req.query.agentId) : undefined;
+    const token = extractAgentToken(req);
+    const tokenAgent = token ? await resolveAgentFromToken(token) : null;
+    const queryAgentId = req.query.agentId ? String(req.query.agentId) : undefined;
+    const agentId = tokenAgent?.id || (!isAuthEnforced() ? queryAgentId : undefined);
     const gameSpec = await prisma.gameSpecification.findUnique({
       where: { key: match.gameType },
     });
@@ -256,7 +343,33 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
       gameSpecForClient = rest;
     }
 
-    res.json({ ...match, gameSpec: gameSpecForClient });
+    const publicMatch = {
+      ...match,
+      participants: match.participants.map((p) => ({
+        ...p,
+        agent: {
+          ...p.agent,
+          inventory: agentId && agentId === p.agentId ? p.agent.inventory : [],
+        },
+      })),
+      rounds: match.rounds.map((r) => ({
+        ...r,
+        payload:
+          agentId && gameSpec && gameSpec.codeScript
+            ? r.payload
+            : gameSpec?.infoType === 'perfect'
+              ? r.payload
+              : null,
+        actions: r.actions.map((a) => ({
+          ...a,
+          payload: a.visibility === 'private' && agentId !== a.agentId ? null : a.payload,
+          targetAgent: a.visibility === 'private' && agentId !== a.agentId ? null : a.targetAgent,
+        })),
+      })),
+      gameSpec: gameSpecForClient,
+    };
+
+    res.json(publicMatch);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -305,6 +418,16 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
 
     if (!agentId) {
       return res.status(400).json({ error: 'AgentId is required' });
+    }
+
+    if (isAuthEnforced()) {
+      const authResult = await requireAgentIdentity(req);
+      if (authResult.error) {
+        return res.status(authResult.error.status).json({ error: authResult.error.error });
+      }
+      if (authResult.agent?.id !== agentId) {
+        return res.status(403).json({ error: 'Authenticated agent does not match join request' });
+      }
     }
 
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
@@ -378,6 +501,24 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
 router.post('/matches/:id/start', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+
+    if (isAuthEnforced()) {
+      const authResult = await requireAgentIdentity(req);
+      if (authResult.error) {
+        return res.status(authResult.error.status).json({ error: authResult.error.error });
+      }
+      const match = await prisma.match.findUnique({
+        where: { id },
+        include: { participants: true },
+      });
+      if (!match) {
+        return res.status(404).json({ error: 'Match not found' });
+      }
+      const isParticipant = match.participants.some((p) => p.agentId === authResult.agent?.id);
+      if (!isParticipant) {
+        return res.status(403).json({ error: 'Authenticated agent is not a participant in this match' });
+      }
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const match = await tx.match.findUnique({
@@ -481,12 +622,22 @@ router.post('/matches/:id/actions', sensitiveLimiter, async (req: Request, res: 
   try {
     const { id } = req.params;
     const { agentId, action, payload } = req.body;
+    const authResult = isAuthEnforced() ? await requireAgentIdentity(req) : null;
 
-    if (!agentId || action === undefined) {
+    if (authResult && authResult.error) {
+      return res.status(authResult.error.status).json({ error: authResult.error.error });
+    }
+
+    const effectiveAgentId = authResult?.agent?.id || agentId;
+    if (!effectiveAgentId || action === undefined) {
       return res.status(400).json({ error: 'AgentId and action are required' });
     }
 
-    const result = await submitAgentAction(id, agentId, String(action), payload);
+    if (authResult?.agent && agentId && agentId !== authResult.agent.id) {
+      console.warn(`Ignoring mismatched agentId in authenticated action request. Requested=${agentId} Authenticated=${authResult.agent.id}`);
+    }
+
+    const result = await submitAgentAction(id, effectiveAgentId, String(action), payload);
     res.json(result);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -728,7 +879,12 @@ router.get('/games', async (req: Request, res: Response) => {
     const games = await prisma.gameSpecification.findMany({
       where: { status: 'approved' },
     });
-    res.json(games);
+    res.json(
+      games.map((g) => {
+        const { codeScript, actionSchema, ...rest } = g as any;
+        return rest;
+      })
+    );
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -739,7 +895,12 @@ router.get('/proposals', async (req: Request, res: Response) => {
     const proposals = await prisma.gameSpecification.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    res.json(proposals);
+    res.json(
+      proposals.map((g) => {
+        const { codeScript, actionSchema, ...rest } = g as any;
+        return rest;
+      })
+    );
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -765,6 +926,14 @@ router.post('/proposals', sensitiveLimiter, async (req: Request, res: Response) 
     const validation = validateGameProposal(req.body);
     if (!validation.ok) {
       return res.status(400).json({ error: 'Proposal validation failed', details: validation.errors, warnings: validation.warnings });
+    }
+
+    const hasCodeScript = typeof codeScript === 'string' && codeScript.trim().length > 0;
+    if (requestFastTrack && hasCodeScript) {
+      return res.status(400).json({
+        error: 'Script-bearing proposals must go through trial before approval',
+        message: 'Fast-track is disabled for proposals that include codeScript.',
+      });
     }
 
     let status = 'pending';
@@ -886,8 +1055,17 @@ router.get('/benchmarks/certifications/:agentId', async (req: Request, res: Resp
 router.post('/proposals/:id/approve', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const actor = String(req.body?.actor || 'admin');
+    const adminAccess = requireAdminAccess(req);
+    if (!adminAccess.ok) return res.status(adminAccess.status).json({ error: adminAccess.error });
+    const actor = String(req.body?.actor || adminAccess.actor || 'admin');
     const proposal = await prisma.$transaction(async (tx) => {
+      const current = await tx.gameSpecification.findUnique({ where: { id } });
+      if (!current) {
+        throw new Error('Proposal not found');
+      }
+      if (current.codeScript && current.status !== 'trial_active') {
+        throw new Error('Script-bearing proposals must complete trial before approval');
+      }
       const updated = await tx.gameSpecification.update({
         where: { id },
         data: { status: 'approved' },
@@ -911,7 +1089,9 @@ router.post('/proposals/:id/approve', sensitiveLimiter, async (req: Request, res
 router.post('/proposals/:id/reject', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const actor = String(req.body?.actor || 'admin');
+    const adminAccess = requireAdminAccess(req);
+    if (!adminAccess.ok) return res.status(adminAccess.status).json({ error: adminAccess.error });
+    const actor = String(req.body?.actor || adminAccess.actor || 'admin');
     const reason = req.body?.reason ? String(req.body.reason) : null;
     const proposal = await prisma.$transaction(async (tx) => {
       const updated = await tx.gameSpecification.update({
@@ -937,7 +1117,9 @@ router.post('/proposals/:id/reject', sensitiveLimiter, async (req: Request, res:
 router.post('/proposals/:id/start-trial', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const actor = String(req.body?.actor || 'admin');
+    const adminAccess = requireAdminAccess(req);
+    if (!adminAccess.ok) return res.status(adminAccess.status).json({ error: adminAccess.error });
+    const actor = String(req.body?.actor || adminAccess.actor || 'admin');
     const proposal = await prisma.$transaction(async (tx) => {
       const updated = await tx.gameSpecification.update({
         where: { id },
@@ -962,8 +1144,17 @@ router.post('/proposals/:id/start-trial', sensitiveLimiter, async (req: Request,
 router.post('/proposals/:id/promote', sensitiveLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const actor = String(req.body?.actor || 'admin');
+    const adminAccess = requireAdminAccess(req);
+    if (!adminAccess.ok) return res.status(adminAccess.status).json({ error: adminAccess.error });
+    const actor = String(req.body?.actor || adminAccess.actor || 'admin');
     const proposal = await prisma.$transaction(async (tx) => {
+      const current = await tx.gameSpecification.findUnique({ where: { id } });
+      if (!current) {
+        throw new Error('Proposal not found');
+      }
+      if (current.status !== 'trial_active') {
+        throw new Error('Only trial_active proposals can be promoted');
+      }
       const updated = await tx.gameSpecification.update({
         where: { id },
         data: { status: 'approved' },

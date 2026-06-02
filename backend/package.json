@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "start:railway": "prisma generate && prisma db push && node dist/index.js",
     "sync:catalog": "tsx scripts/sync-catalog-local-to-remote.ts",
+    "security:baseline": "tsx scripts/security-baseline.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push"

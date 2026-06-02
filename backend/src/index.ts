@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
 import apiRouter from './routes/api.js';
 import { randomUUID } from 'node:crypto';
+import { securityConfig } from './config/security.js';
 
 
 import { seedHouseBots, runHouseBotsLoop } from './engine/house-bots.js';
@@ -66,7 +67,10 @@ async function main() {
 
   // Otherwise, run Express server with REST API + SSE MCP transport
   const app = express();
-  app.use(cors());
+  const allowedOrigins = String(process.env.CONCLAVE_ALLOWED_ORIGINS || process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const allowOrigin = (origin: string | undefined) => {
     if (!origin || origin === 'null') return true;
@@ -74,8 +78,19 @@ async function main() {
     if (origin.startsWith('vscode-file://')) return true;
     if (origin.startsWith('vscode://')) return true;
     if (origin.startsWith('file://')) return true;
-    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+    if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) return true;
+    return !securityConfig.secureStrictCors;
   };
+
+  app.use(
+    cors({
+      origin(origin, callback) {
+        callback(null, allowOrigin(origin || undefined));
+      },
+      credentials: true,
+    })
+  );
 
   type StreamMode = 'json' | 'sse';
   class StreamableHttpTransport {

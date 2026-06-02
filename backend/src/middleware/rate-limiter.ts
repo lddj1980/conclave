@@ -7,6 +7,15 @@ interface RateLimitRecord {
 
 const ipCache = new Map<string, RateLimitRecord>();
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of ipCache.entries()) {
+    if (now > record.resetTime) {
+      ipCache.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000);
+
 /**
  * Lightweight in-memory rate limiting middleware to prevent malicious or misconfigured
  * agents from overloading the arena endpoints.

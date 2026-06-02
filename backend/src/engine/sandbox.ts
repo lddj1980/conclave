@@ -1,4 +1,6 @@
-import vm from 'node:vm';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 export interface GameEngine {
   initializeState(players: string[], seed: string): any;
@@ -21,89 +23,95 @@ export interface GameEngine {
   serializeStateForPlayer(state: any, playerId: string): any;
 }
 
+type SandboxRequest =
+  | { op: 'initializeState'; code: string; players: string[]; seed: string }
+  | { op: 'validateAction'; code: string; state: any; action: any; playerId: string; actionMeta?: any }
+  | { op: 'transitionState'; code: string; state: any; action: any; playerId: string; randomSeed: string; gameContext?: any; actionMeta?: any }
+  | { op: 'serializeStateForPlayer'; code: string; state: any; playerId: string };
+
+type SandboxResponse = { ok: true; result: any } | { ok: false; error: string };
+
+function resolveWorkerPath() {
+  const tsWorkerPath = path.join(__dirname, 'sandbox-worker.ts');
+  const jsWorkerPath = path.join(__dirname, 'sandbox-worker.js');
+  if (existsSync(tsWorkerPath)) return tsWorkerPath;
+  if (existsSync(jsWorkerPath)) return jsWorkerPath;
+  return jsWorkerPath;
+}
+
+function invokeWorker(request: SandboxRequest, timeoutMs = 3000) {
+  const workerPath = resolveWorkerPath();
+  const isTs = workerPath.endsWith('.ts');
+  const args = isTs ? ['--import', 'tsx', workerPath] : [workerPath];
+
+  const result = spawnSync(process.execPath, args, {
+    input: JSON.stringify(request),
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 10 * 1024 * 1024,
+    env: {
+      ...process.env,
+    },
+  });
+
+  if (result.error) {
+    throw new Error(`Sandbox worker failed: ${result.error.message}`);
+  }
+
+  const stdout = String(result.stdout || '').trim();
+  const stderr = String(result.stderr || '').trim();
+
+  if (!stdout) {
+    throw new Error(`Sandbox worker returned no output${stderr ? `: ${stderr}` : ''}`);
+  }
+
+  let parsed: SandboxResponse;
+  try {
+    parsed = JSON.parse(stdout) as SandboxResponse;
+  } catch (error: any) {
+    throw new Error(`Sandbox worker returned invalid JSON${stderr ? `; stderr: ${stderr}` : ''}: ${String(error?.message || error)}`);
+  }
+
+  if (!parsed.ok) {
+    throw new Error(parsed.error || 'Sandbox worker error');
+  }
+
+  const exitStatus = typeof result.status === 'number' ? result.status : 0;
+  if (exitStatus !== 0) {
+    throw new Error(`Sandbox worker exited with status ${exitStatus}${stderr ? `: ${stderr}` : ''}`);
+  }
+
+  return parsed.result;
+}
+
 export function createSandbox(code: string): GameEngine {
-  // Create an isolated context
-  const sandboxExports = {} as any;
-  const context = {
-    exports: sandboxExports,
-    module: { exports: sandboxExports },
-    console: {
-      log: (...args: any[]) => console.log('[Sandbox Log]:', ...args),
-      error: (...args: any[]) => console.error('[Sandbox Error]:', ...args),
-      warn: (...args: any[]) => console.warn('[Sandbox Warn]:', ...args),
-    },
-    Math: {
-      // Keep pure mathematical functions
-      abs: Math.abs, acos: Math.acos, acosh: Math.acosh, asin: Math.asin, asinh: Math.asinh,
-      atan: Math.atan, atan2: Math.atan2, atanh: Math.atanh, cbrt: Math.cbrt, ceil: Math.ceil,
-      clz32: Math.clz32, cos: Math.cos, cosh: Math.cosh, exp: Math.exp, expm1: Math.expm1,
-      floor: Math.floor, fround: Math.fround, hypot: Math.hypot, imul: Math.imul, log: Math.log,
-      log10: Math.log10, log1p: Math.log1p, log2: Math.log2, max: Math.max, min: Math.min,
-      pow: Math.pow, round: Math.round, sign: Math.sign, sin: Math.sin, sinh: Math.sinh,
-      sqrt: Math.sqrt, tan: Math.tan, tanh: Math.tanh, trunc: Math.trunc,
-      E: Math.E, LN2: Math.LN2, LN10: Math.LN10, LOG2E: Math.LOG2E, LOG10E: Math.LOG10E,
-      PI: Math.PI, SQRT1_2: Math.SQRT1_2, SQRT2: Math.SQRT2,
-      // Forbid un-seeded random
-      random: () => {
-        throw new Error('Use the provided random() function parameter for determinism.');
-      },
-    },
-    JSON,
-    Array,
-    Object,
-    String,
-    Number,
-    Boolean,
-    Date,
-    RegExp,
-    Error,
-    Map,
-    Set,
-    Promise,
-  };
-
-  vm.createContext(context);
-
-  // Run code to populate exports
-  const script = new vm.Script(code);
-  script.runInContext(context, { timeout: 1000 });
-
-  // Get the populated export functions
-  const engine = context.exports;
-
   return {
     initializeState(players: string[], seed: string) {
-      if (typeof engine.initializeState !== 'function') {
-        return {};
-      }
-      // Run function in VM context to maintain security boundaries
-      const runFn = new vm.Script('exports.initializeState(players, seed)');
-      const callCtx = vm.createContext({ ...context, players, seed });
-      return runFn.runInContext(callCtx, { timeout: 1000 });
+      return invokeWorker({ op: 'initializeState', code, players, seed });
     },
     validateAction(state: any, action: any, playerId: string, actionMeta?: any) {
-      if (typeof engine.validateAction !== 'function') {
-        return { valid: true };
-      }
-      const runFn = new vm.Script('exports.validateAction(state, action, playerId, actionMeta)');
-      const callCtx = vm.createContext({ ...context, state, action, playerId, actionMeta });
-      return runFn.runInContext(callCtx, { timeout: 1000 });
+      const result = invokeWorker({ op: 'validateAction', code, state, action, playerId, actionMeta });
+      return result || { valid: true };
     },
     transitionState(state: any, action: any, playerId: string, random: () => number, gameContext?: any, actionMeta?: any) {
-      if (typeof engine.transitionState !== 'function') {
+      const randomSeed = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+      const result = invokeWorker({
+        op: 'transitionState',
+        code,
+        state,
+        action,
+        playerId,
+        randomSeed,
+        gameContext,
+        actionMeta,
+      });
+      if (!result) {
         return { newState: state, events: [], finished: false, scores: {} };
       }
-      const runFn = new vm.Script('exports.transitionState(state, action, playerId, random, gameContext, actionMeta)');
-      const callCtx = vm.createContext({ ...context, state, action, playerId, random, gameContext, actionMeta });
-      return runFn.runInContext(callCtx, { timeout: 1000 });
+      return result;
     },
     serializeStateForPlayer(state: any, playerId: string) {
-      if (typeof engine.serializeStateForPlayer !== 'function') {
-        return state;
-      }
-      const runFn = new vm.Script('exports.serializeStateForPlayer(state, playerId)');
-      const callCtx = vm.createContext({ ...context, state, playerId });
-      return runFn.runInContext(callCtx, { timeout: 1000 });
+      return invokeWorker({ op: 'serializeStateForPlayer', code, state, playerId });
     },
   };
 }

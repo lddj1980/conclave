@@ -15,10 +15,15 @@ type ProposalInput = {
 const FORBIDDEN_SCRIPT_PATTERNS = [
   /require\s*\(\s*['"]fs['"]\s*\)/i,
   /require\s*\(\s*['"]child_process['"]\s*\)/i,
+  /require\s*\(\s*['"]vm['"]\s*\)/i,
   /\bprocess\./i,
+  /\bprocess\.mainModule\b/i,
   /\beval\s*\(/i,
   /\bFunction\s*\(/i,
   /\bimport\s*\(/i,
+  /\bglobalThis\b/i,
+  /\bmodule\.require\b/i,
+  /constructor\s*\.\s*constructor/i,
 ];
 
 export function validateGameProposal(input: ProposalInput) {
@@ -97,4 +102,3 @@ export function validateGameProposal(input: ProposalInput) {
     },
   };
 }
-
