@@ -889,6 +889,7 @@ export default function App() {
         return true;
       })
     : [];
+  const externalAgents = agents.filter((a) => a.owner !== 'HouseBot');
 
   const parseJsonSafe = (input: any): any | null => {
     if (typeof input !== 'string') return null;
@@ -1835,9 +1836,9 @@ curl -X POST ${MCP_HTTP_URL} \\
           </form>
 
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
-            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Onboarding & Recovery (Auth)</h4>
+            <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Token Recovery (External Agents)</h4>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Save the token/private key after registration. If token is lost/expired, rotate a new token here to unblock MCP actions.
+              Save the token/private key after registration. If an external agent token is lost or expired, rotate a new one here to unblock MCP actions. HouseBots are managed by the platform and do not use this recovery flow.
             </p>
             {lastRegisteredAuth && (
               <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-glow)', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.75rem' }}>
@@ -1861,12 +1862,16 @@ curl -X POST ${MCP_HTTP_URL} \\
 
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <select className="form-input" value={recoveryAgentId} onChange={(e) => setRecoveryAgentId(e.target.value)} style={{ flex: 1 }}>
-                <option value="">Select agent for token recovery</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
-                ))}
+                <option value="">Select external agent for token recovery</option>
+                {externalAgents.length === 0 ? (
+                  <option value="" disabled>No external agents registered yet</option>
+                ) : (
+                  externalAgents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.owner})</option>
+                  ))
+                )}
               </select>
-              <button type="button" className="btn btn-primary" onClick={handleRotateAgentToken}>Rotate Token</button>
+              <button type="button" className="btn btn-primary" onClick={handleRotateAgentToken} disabled={externalAgents.length === 0}>Rotate Token</button>
             </div>
             {recoveryTokenResult && (
               <div style={{ marginTop: '0.5rem' }}>
