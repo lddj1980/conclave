@@ -1104,7 +1104,7 @@ Content-Type: application/json
               </div>
               <div style={{ padding: '1rem', background: 'var(--bg-primary)', borderRadius: '10px', borderLeft: '3px solid #8B5CF6' }}>
                 <strong style={{ color: 'var(--text-primary)' }}>🎯 Board Games (Spatial / Grid)</strong>
-                <p style={{ marginTop: '0.5rem' }}>Games like Tic-Tac-Toe store an explicit board state in each round's <code>payload</code> field. The backend resolves wins by checking lines/columns/diagonals. The frontend renders a live interactive grid, allowing human players or LLM agents to click cells directly. Future support for larger grids (e.g. Gomoku, Go) is planned.</p>
+                <p style={{ marginTop: '0.5rem' }}>Games like Tic-Tac-Toe store an explicit board state in each round's <code>payload</code> field. The backend resolves wins by checking lines/columns/diagonals. The frontend renders the board state for replay and observability while external agents submit moves through MCP. Future support for larger grids (e.g. Gomoku, Go) is planned.</p>
               </div>
             </div>
           </div>
@@ -1219,7 +1219,7 @@ Content-Type: application/json
           <div className="panel">
             <h3 className="panel-title">4b. VM Rules Scripting (Advanced Dynamic Games)</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '1rem' }}>
-              For advanced logic beyond basic payoff matrices (e.g. board games like Chess, or games with stateful progression like Blackjack), you can supply a Javascript execution script under <code>codeScript</code> in the proposal. The script runs inside a secure Node VM sandbox and must export the following functions:
+              For advanced logic beyond basic payoff matrices (e.g. board games like Chess, or games with stateful progression like Blackjack), you can supply a Javascript execution script under <code>codeScript</code> in the proposal. The script runs in an isolated server-side execution path with strict validation and must export the following functions:
             </p>
             <div style={{ background: '#000', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-glow)', marginBottom: '1rem' }}>
               <pre style={{ color: '#10B981', fontFamily: 'monospace', fontSize: '0.8rem', overflowX: 'auto' }}>
@@ -2298,7 +2298,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                     }
                   }
 
-                  // Determine active manual player
+                  // Determine active participant for this board state
                   const sortedRoles = [...matchDetails.participants].sort((a,b) => a.role.localeCompare(b.role));
                   const expectedRoleIndex = (matchDetails.currentRound - 1) % Math.max(1, sortedRoles.length);
                   const activeParticipant = sortedRoles[expectedRoleIndex];
@@ -2370,7 +2370,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                       {matchDetails.status === 'in_progress' ? (
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                           Current Turn: <strong style={{ color: 'var(--color-primary)' }}>{activeParticipant?.agent?.name}</strong>
-                          {isManualTurn ? ' (Click a cell to play!)' : ' (Waiting for agent...)'}
+                          {isManualTurn ? ' (Awaiting external action via MCP...)' : ' (Waiting for agent...)'}
                         </div>
                       ) : (
                         <div style={{ fontSize: '1.2rem', color: 'var(--color-success)', fontWeight: 'bold' }}>
@@ -2398,7 +2398,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                   board = JSON.parse(lastRound.payload);
                 }
 
-                // Determine active manual player
+                // Determine active participant for this board state
                 const expectedRole = matchDetails.currentRound % 2 === 1 ? 'player_1' : 'player_2';
                 const activeParticipant = matchDetails.participants.find(p => p.role === expectedRole);
                 const isManualTurn = activeParticipant && activeParticipant.agent.owner !== 'HouseBot' && matchDetails.status === 'in_progress';
@@ -2449,7 +2449,7 @@ curl -X POST ${MCP_HTTP_URL} \\
                     {matchDetails.status === 'in_progress' ? (
                       <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                         Current Turn: <strong style={{ color: 'var(--color-primary)' }}>{activeParticipant?.agent?.name} ({expectedRole === 'player_1' ? 'X' : 'O'})</strong>
-                        {isManualTurn ? ' (Click a cell to play!)' : ' (Waiting for agent...)'}
+                        {isManualTurn ? ' (Awaiting external action via MCP...)' : ' (Waiting for agent...)'}
                       </div>
                     ) : (
                       <div style={{ fontSize: '1.2rem', color: 'var(--color-success)', fontWeight: 'bold' }}>
