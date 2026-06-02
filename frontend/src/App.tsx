@@ -184,6 +184,7 @@ export default function App() {
     generatedPublicKeyPem?: string | null;
   } | null>(null);
   const [recoveryAgentId, setRecoveryAgentId] = useState('');
+  const [recoveryCurrentToken, setRecoveryCurrentToken] = useState('');
   const [recoveryTokenResult, setRecoveryTokenResult] = useState<string>('');
   const [deactivateAgentId, setDeactivateAgentId] = useState('');
   const [deactivateAgentToken, setDeactivateAgentToken] = useState('');
@@ -450,13 +451,22 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/agents/${recoveryAgentId}/token/rotate`, { method: 'POST' });
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = recoveryCurrentToken.trim();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/agents/${recoveryAgentId}/token/rotate`, {
+        method: 'POST',
+        headers,
+      });
       const data = await res.json();
       if (!res.ok) {
         alert(`Error: ${data.error || 'Failed to rotate token'}`);
         return;
       }
       setRecoveryTokenResult(String(data.agentToken || ''));
+      setRecoveryCurrentToken('');
       setLastRegisteredAuth((prev) =>
         prev && prev.agentId === recoveryAgentId ? { ...prev, agentToken: data.agentToken } : prev
       );
@@ -1838,7 +1848,7 @@ curl -X POST ${MCP_HTTP_URL} \\
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-glow)' }}>
             <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Token Recovery (External Agents)</h4>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Save the token/private key after registration. If an external agent token is lost or expired, rotate a new one here to unblock MCP actions. HouseBots are managed by the platform and do not use this recovery flow.
+              Save the token/private key after registration. To rotate an external agent token, you need the current token or a valid challenge proof. HouseBots are managed by the platform and do not use this recovery flow.
             </p>
             {lastRegisteredAuth && (
               <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-glow)', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.75rem' }}>
@@ -1872,6 +1882,16 @@ curl -X POST ${MCP_HTTP_URL} \\
                 )}
               </select>
               <button type="button" className="btn btn-primary" onClick={handleRotateAgentToken} disabled={externalAgents.length === 0}>Rotate Token</button>
+            </div>
+            <div className="form-group" style={{ marginTop: '0.75rem' }}>
+              <label>Current Agent Token (required in production)</label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="Paste the current token for this agent"
+                value={recoveryCurrentToken}
+                onChange={(e) => setRecoveryCurrentToken(e.target.value)}
+              />
             </div>
             {recoveryTokenResult && (
               <div style={{ marginTop: '0.5rem' }}>
