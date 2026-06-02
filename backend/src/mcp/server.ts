@@ -20,7 +20,7 @@ import {
 export function createMcpServer() {
   const server = new Server(
     {
-      name: 'conclave-arena',
+      name: 'Conclave',
       version: '1.0.0',
     },
     {

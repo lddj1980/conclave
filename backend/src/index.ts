@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { createMcpServer } from './mcp/server.js';
+import { smitheryServerCard } from './mcp/smithery-server-card.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -319,6 +320,11 @@ async function main() {
 
   // REST API for Frontend Dashboard
   app.use('/api', apiRouter);
+
+  app.get(['/.well-known/mcp/server-card.json', '/server-card.json'], (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json(smitheryServerCard);
+  });
 
   app.listen(PORT, () => {
     console.log(`=========================================`);
