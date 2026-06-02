@@ -6,6 +6,7 @@ import { playTTTTurn, TTTBoard } from './tic-tac-toe.js';
 import { refreshMatchIntegrityHashTx } from './integrity.js';
 import { createSandbox } from './sandbox.js';
 import { createPRNG } from './prng.js';
+import { getChessLegalMovesFromState } from './chess-helpers.js';
 
 // #region debug-point Z:dbg-helper
 const __dbg = (hypothesisId: string, location: string, msg: string, data?: any) => {
@@ -121,9 +122,16 @@ export async function submitAgentAction(
           boardState = sandbox.initializeState(roleOrderedPlayerIds, match.matchSeed);
         }
 
-        const valRes = sandbox.validateAction(boardState, move, agentId, { action: move, payload, agentId });
-        if (!valRes.valid) {
-          throw new Error(valRes.error || `Invalid move: ${move}`);
+        if (match.gameType === 'chess') {
+          const legalMoves = getChessLegalMovesFromState(boardState);
+          if (!legalMoves.includes(move)) {
+            throw new Error(`Invalid chess move: ${move}`);
+          }
+        } else {
+          const valRes = sandbox.validateAction(boardState, move, agentId, { action: move, payload, agentId });
+          if (!valRes.valid) {
+            throw new Error(valRes.error || `Invalid move: ${move}`);
+          }
         }
       } else {
         // Legacy role validation
@@ -955,10 +963,10 @@ export async function submitAgentAction(
             })),
           };
 
-          const { newState, finished, scores, events, contractUpdates, inventoryUpdates } = sandbox.transitionState(
-            boardState,
-            actionsMap,
-            '',
+        const { newState, finished, scores, events, contractUpdates, inventoryUpdates } = sandbox.transitionState(
+          boardState,
+          actionsMap,
+          '',
             prng,
             gameContext,
             {

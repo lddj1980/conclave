@@ -5,6 +5,7 @@ import { submitAgentAction } from '../engine/match-resolver.js';
 import { Move } from '../engine/prisoners-dilemma.js';
 import { refreshMatchIntegrityHashTx } from '../engine/integrity.js';
 import { createSandbox } from '../engine/sandbox.js';
+import { getChessLegalMovesFromRoundPayload } from '../engine/chess-helpers.js';
 import {
   createAgentToken,
   hashAgentToken,
@@ -227,6 +228,11 @@ export function createMcpServer() {
         }
         return { candidates: playable.length > 0 ? playable : allowedActions, payload: null };
       }
+    }
+
+    if (match.gameType === 'chess') {
+      const legalMoves = getChessLegalMovesFromRoundPayload(stateRaw);
+      return { candidates: legalMoves.length > 0 ? legalMoves : allowedActions, payload: null };
     }
 
     if (gameSpec.codeScript) {
