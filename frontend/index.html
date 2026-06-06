@@ -10,6 +10,19 @@
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
     <meta name="google-site-verification" content="FHhRUZZOD0MoxxyGPkd6moTZuvWX1CcOh2bx0RzeSzg" />
     <link rel="canonical" href="%VITE_SITE_URL%" />
+    <script>
+      (function () {
+        var host = window.location.hostname || '';
+        var canonicalSiteUrl = '%VITE_SITE_URL%';
+        var isRailwayHost = /\.up\.railway\.app$/i.test(host);
+        var isCanonicalPlaceholder =
+          canonicalSiteUrl === '%VITE_SITE_URL%' || !canonicalSiteUrl || canonicalSiteUrl.indexOf('http') !== 0;
+        if (isRailwayHost && !isCanonicalPlaceholder) {
+          var target = canonicalSiteUrl.replace(/\/+$/, '') + window.location.pathname + window.location.search + window.location.hash;
+          window.location.replace(target);
+        }
+      })();
+    </script>
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Conclave" />
