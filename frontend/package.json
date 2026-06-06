@@ -8,7 +8,9 @@
     "seo:generate": "node scripts/generate-programmatic-seo.mjs",
     "build": "npm run seo:generate && tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.mjs",
+    "start:railway": "node server.mjs"
   },
   "dependencies": {
     "react": "^19.2.6",

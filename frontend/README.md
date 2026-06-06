@@ -3,6 +3,8 @@
 Conclave is also listed on Smithery:
 https://smithery.ai/servers/ldourado1980/conclave
 
+Production frontend deploys with a small Node server (`npm run start:railway`) that serves `dist/` and issues a 308 redirect from the Railway hostname to the canonical domain when `CANONICAL_SITE_URL` is set.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
