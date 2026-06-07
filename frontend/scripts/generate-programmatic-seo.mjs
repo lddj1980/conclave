@@ -365,7 +365,7 @@ async function generate() {
         const rawContent = await fs.readFile(path.resolve(catDir, file), 'utf8');
         const { attributes, body } = fm(rawContent);
         
-        const htmlBody = marked(body);
+        const htmlBody = marked(body).replace(/<a href="http([^"]*)"/g, '<a href="http$1" target="_blank" rel="noopener noreferrer"');
         const pageBody = `
           <nav class="breadcrumb" aria-label="Breadcrumb">
             <a href="/">Home</a> &raquo; <span style="text-transform: capitalize;">${cat}</span> &raquo; ${attributes.title}
