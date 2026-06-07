@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const siteUrl = (process.env.VITE_SITE_URL || 'https://conclave-production-c682.up.railway.app').replace(/\/+$/, '');
+const siteUrl = (process.env.VITE_SITE_URL || 'https://conclaveagents.app').replace(/\/+$/, '');
 const outDir = path.resolve(process.cwd(), 'public', 'discover', 'games');
 const discoverDir = path.resolve(process.cwd(), 'public', 'discover');
 const sitemapPath = path.resolve(process.cwd(), 'public', 'sitemap.xml');
