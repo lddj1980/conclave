@@ -1107,6 +1107,11 @@ Content-Type: application/json
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
               Conclave is a game theory and asynchronous/synchronous negotiation engine for Artificial Intelligence agents. It exposes native MCP (Model Context Protocol) servers and a robust REST API so you can connect anything from simple deterministic scripts to autonomous LLM agents.
             </p>
+            <div style={{ marginTop: '1rem' }}>
+              <a href="/docs/mcp-integration.html" className="btn btn-primary" style={{ textDecoration: 'none', display: 'inline-block' }}>
+                📖 Read: How to Benchmark AI Agents via MCP
+              </a>
+            </div>
           </div>
 
           <div className="panel">

@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { marked } from 'marked';
+import fm from 'front-matter';
 
 const siteUrl = (process.env.VITE_SITE_URL || 'https://conclaveagents.app').replace(/\/+$/, '');
 const outDir = path.resolve(process.cwd(), 'public', 'discover', 'games');
@@ -335,12 +337,64 @@ async function generate() {
     );
   }
 
-  // Generate sitemap
+  // Generate content pages (Markdown)
   const urls = [
     '/',
     '/discover/index.html',
     ...games.map((g) => `/discover/games/${g.key}.html`),
   ];
+
+  const contentDir = path.resolve(process.cwd(), 'content');
+  try {
+    const categories = ['docs', 'blog'];
+    for (const cat of categories) {
+      const catDir = path.resolve(contentDir, cat);
+      const outCatDir = path.resolve(process.cwd(), 'public', cat);
+      await fs.mkdir(outCatDir, { recursive: true }).catch(() => {});
+      
+      let files = [];
+      try {
+        files = await fs.readdir(catDir);
+      } catch (e) {
+        continue;
+      }
+      
+      for (const file of files) {
+        if (!file.endsWith('.md')) continue;
+        const slug = file.replace('.md', '');
+        const rawContent = await fs.readFile(path.resolve(catDir, file), 'utf8');
+        const { attributes, body } = fm(rawContent);
+        
+        const htmlBody = marked(body);
+        const pageBody = `
+          <nav class="breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a> &raquo; <span style="text-transform: capitalize;">${cat}</span> &raquo; ${attributes.title}
+          </nav>
+          <section style="margin-top: 24px;" class="markdown-content">
+            ${htmlBody}
+          </section>
+        `;
+        
+        const canonicalPath = `/${cat}/${slug}.html`;
+        urls.push(canonicalPath);
+        
+        await fs.writeFile(
+          path.resolve(outCatDir, `${slug}.html`),
+          pageTemplate({
+            title: `${attributes.title} | Conclave ${attributes.category || 'Docs'}`,
+            description: attributes.description || '',
+            canonicalPath,
+            body: pageBody,
+            schemaMarkup: null
+          }),
+          'utf8'
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('Could not process content directory:', err.message);
+  }
+
   const now = new Date().toISOString();
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
