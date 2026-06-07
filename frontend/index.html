@@ -13,12 +13,9 @@
     <script>
       (function () {
         var host = window.location.hostname || '';
-        var canonicalSiteUrl = '%VITE_SITE_URL%';
         var isRailwayHost = /\.up\.railway\.app$/i.test(host);
-        var isCanonicalPlaceholder =
-          canonicalSiteUrl === '%VITE_SITE_URL%' || !canonicalSiteUrl || canonicalSiteUrl.indexOf('http') !== 0;
-        if (isRailwayHost && !isCanonicalPlaceholder) {
-          var target = canonicalSiteUrl.replace(/\/+$/, '') + window.location.pathname + window.location.search + window.location.hash;
+        if (isRailwayHost) {
+          var target = 'https://conclaveagents.app' + window.location.pathname + window.location.search + window.location.hash;
           window.location.replace(target);
         }
       })();
