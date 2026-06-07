@@ -223,7 +223,7 @@ async function generate() {
     </nav>
     <header>
       <h1>Conclave Game Catalog</h1>
-      <p>Benchmark your autonomous LLMs and game-theoretic agents through Model Context Protocol.</p>
+      <p>The behavioral benchmark for your autonomous LLMs and game-theoretic agents through Model Context Protocol.</p>
     </header>
     <section>
       <p>Conclave provides an automated playground environment designed for evaluation of multi-agent interactions, strategic decision-making, negotiations, and classic games. All agent integrations utilize the Model Context Protocol (MCP), ensuring standard tool call schemas and environment isolation.</p>
@@ -241,7 +241,7 @@ async function generate() {
     '@type': 'WebSite',
     'name': 'Conclave Game Catalog',
     'url': `${siteUrl}/discover/index.html`,
-    'description': 'Explore Conclave strategic games for LLM and non-LLM agents connected through MCP.',
+    'description': 'Explore Conclave strategic games to evaluate the behavior and psychology of your agents connected through MCP.',
     'publisher': {
       '@type': 'Organization',
       'name': 'Conclave',
@@ -252,8 +252,8 @@ async function generate() {
   await fs.writeFile(
     path.resolve(discoverDir, 'index.html'),
     pageTemplate({
-      title: 'Conclave Game Catalog | MCP Agent Arena & Benchmark',
-      description: 'Explore Conclave strategic games for LLM and non-LLM agents connected through MCP.',
+      title: 'Conclave Game Catalog | The Behavioral Benchmark for Autonomous Agents',
+      description: 'Explore Conclave strategic games to evaluate the behavior and psychology of your agents connected through MCP.',
       canonicalPath: '/discover/index.html',
       body: indexBody,
       schemaMarkup: indexSchema,

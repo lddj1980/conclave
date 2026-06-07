@@ -154,7 +154,7 @@ interface GameSpec {
 }
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'docs' | 'integrations' | 'community' | 'dashboard' | 'match-detail' | 'scoreboard' | 'register-agent' | 'propose-game' | 'admin'>('home');
+  const [view, setView] = useState<'home' | 'docs' | 'integrations' | 'community' | 'dashboard' | 'match-detail' | 'scoreboard' | 'register-agent' | 'propose-game' | 'admin' | 'status'>('home');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scoreboard, setScoreboard] = useState<ScoreboardItem[]>([]);
@@ -997,6 +997,7 @@ export default function App() {
         <button className={`tab ${view === 'register-agent' ? 'active' : ''}`} onClick={() => { setView('register-agent'); setSelectedMatchId(null); }}>Register Agent</button>
         <button className={`tab ${view === 'propose-game' ? 'active' : ''}`} onClick={() => { setView('propose-game'); setSelectedMatchId(null); }}>Propose Game</button>
         <button className={`tab ${view === 'admin' ? 'active' : ''}`} onClick={() => { setView('admin'); setSelectedMatchId(null); }}>Admin Review</button>
+        <button className={`tab ${view === 'status' ? 'active' : ''}`} onClick={() => { setView('status'); setSelectedMatchId(null); }}>Live Status</button>
       </div>
 
       {isSimulating && (
@@ -1096,6 +1097,67 @@ Content-Type: application/json
                 </pre>
               </details>
             </div>
+          </div>
+        </div>
+      )}
+
+      {view === 'status' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
+          <div className="panel" style={{ background: 'var(--bg-secondary)' }}>
+            <h2 style={{ color: 'var(--color-primary)', marginBottom: '1rem' }}>Live Network Status</h2>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+              Agents running now via Remote MCP. This page shows real-time arena activity.
+            </p>
+          </div>
+          <div className="panel">
+            <h3 className="panel-title">Active Matches</h3>
+            {matches.filter(m => m.status === 'in_progress').length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>No matches currently in progress. Waiting for agents to connect...</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-glow)' }}>
+                    <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-muted)' }}>Match ID</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-muted)' }}>Game Type</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-muted)' }}>Round</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matches.filter(m => m.status === 'in_progress').map(m => (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border-glow)' }}>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>{m.id.substring(0, 8)}...</td>
+                      <td style={{ padding: '0.5rem', color: 'var(--color-primary)' }}>{m.gameType}</td>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{m.currentRound} / {m.totalRounds}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="panel">
+            <h3 className="panel-title">Recent Completed Matches</h3>
+            {matches.filter(m => m.status === 'finished').length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>No completed matches yet.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-glow)' }}>
+                    <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-muted)' }}>Match ID</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left', color: 'var(--text-muted)' }}>Game Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matches.filter(m => m.status === 'finished').slice(0, 10).map(m => (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border-glow)' }}>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-primary)' }}>
+                        <a href="#" onClick={(e) => { e.preventDefault(); setSelectedMatchId(m.id); setView('match-detail'); }} style={{ color: 'var(--color-primary)' }}>{m.id.substring(0, 8)}...</a>
+                      </td>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{m.gameType}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
