@@ -11,8 +11,7 @@
     "security:baseline": "tsx scripts/security-baseline.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push",
-    "start:housebots": "tsx scripts/house-bots-runner.ts"
+    "prisma:push": "prisma db push"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",
