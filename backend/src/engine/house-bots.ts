@@ -751,6 +751,38 @@ const HOUSE_BOTS = [
       }
       return { action: res, payload: undefined };
     }
+  },
+  {
+    name: 'SuperpowerUSA',
+    owner: 'HouseBot',
+    description: 'United States diplomatic and military AI. Seeks Cuban disarmament while managing cold war tensions.',
+    gameType: 'geopolitical_crisis',
+    strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
+      const res = await fetchGeopoliticalAction(roundHistory, agentId, match, 'player_1');
+      if (res.startsWith('message:')) {
+        return { action: 'message', payload: res.substring('message:'.length) };
+      }
+      if (res.startsWith('propose:')) {
+        return { action: 'propose', payload: res.substring('propose:'.length) };
+      }
+      return { action: res, payload: undefined };
+    }
+  },
+  {
+    name: 'SuperpowerUSSR',
+    owner: 'HouseBot',
+    description: 'Soviet Union diplomatic and military AI. Seeks Turkish disarmament and Cuban security guarantees.',
+    gameType: 'geopolitical_crisis',
+    strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
+      const res = await fetchGeopoliticalAction(roundHistory, agentId, match, 'player_2');
+      if (res.startsWith('message:')) {
+        return { action: 'message', payload: res.substring('message:'.length) };
+      }
+      if (res.startsWith('propose:')) {
+        return { action: 'propose', payload: res.substring('propose:'.length) };
+      }
+      return { action: res, payload: undefined };
+    }
   }
 ];
 
