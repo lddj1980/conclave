@@ -42,29 +42,38 @@ exports.initializeState = function(players, seed) {
   };
 };
 
-exports.validateAction = function(state, action, playerId) {
-  if (action === 'accept' || action === 'decline') {
+exports.validateAction = function(state, action, playerId, actionMeta) {
+  var fullAction = action;
+  if (actionMeta && actionMeta.payload) {
+    fullAction = action + ':' + actionMeta.payload;
+  }
+  if (fullAction === 'accept' || fullAction === 'decline') {
     return { valid: true };
   }
-  if (action.indexOf('propose:') === 0) {
-    var parts = action.substring('propose:'.length).split(',');
+  if (fullAction.indexOf('propose:') === 0) {
+    var parts = fullAction.substring('propose:'.length).split(',');
     if (parts.length === 2) {
       return { valid: true };
     }
   }
-  if (action.indexOf('message:') === 0) {
+  if (fullAction.indexOf('message:') === 0) {
     return { valid: true };
   }
   return { valid: false, error: 'Ação inválida. Use "message:texto", "propose:give_apple=X,receive_orange=Y", "accept" ou "decline".' };
 };
 
-exports.transitionState = function(state, action, playerId, random, gameContext) {
+exports.transitionState = function(state, action, playerId, random, gameContext, actionMeta) {
   const events = [];
   const p1 = state.players[0];
   const p2 = state.players[1];
   const opponentId = playerId === p1 ? p2 : p1;
 
-  if (action === 'accept') {
+  var fullAction = action;
+  if (actionMeta && actionMeta.payload) {
+    fullAction = action + ':' + actionMeta.payload;
+  }
+
+  if (fullAction === 'accept') {
     if (!state.proposal) {
       events.push({
         eventType: 'accept_failed',
@@ -93,14 +102,14 @@ exports.transitionState = function(state, action, playerId, random, gameContext)
         message: 'Acordo fechado! Proposta aceita por ' + playerId
       });
     }
-  } else if (action === 'decline') {
+  } else if (fullAction === 'decline') {
     state.proposal = null;
     events.push({
       eventType: 'proposal_declined',
       message: 'Jogador ' + playerId + ' recusou a proposta.'
     });
-  } else if (action.indexOf('propose:') === 0) {
-    var offerText = action.substring('propose:'.length);
+  } else if (fullAction.indexOf('propose:') === 0) {
+    var offerText = fullAction.substring('propose:'.length);
     var parts = offerText.split(',');
     
     // Format: propose:give_apple=1,receive_orange=2
@@ -138,8 +147,8 @@ exports.transitionState = function(state, action, playerId, random, gameContext)
         });
       }
     }
-  } else if (action.indexOf('message:') === 0) {
-    var txt = action.substring('message:'.length);
+  } else if (fullAction.indexOf('message:') === 0) {
+    var txt = fullAction.substring('message:'.length);
     state.chatHistory.push({ playerId: playerId, text: txt });
     events.push({
       eventType: 'chat_message',
