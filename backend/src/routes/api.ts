@@ -424,6 +424,8 @@ router.get('/matches/:id', async (req: Request, res: Response) => {
         payload:
           agentId && gameSpec && gameSpec.codeScript
             ? r.payload
+            : gameSpec?.key === 'geopolitical_crisis'
+              ? r.payload
             : gameSpec?.infoType === 'perfect'
               ? r.payload
               : null,

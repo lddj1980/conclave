@@ -763,7 +763,14 @@ const HOUSE_BOTS = [
         return { action: 'message', payload: res.substring('message:'.length) };
       }
       if (res.startsWith('propose:')) {
-        return { action: 'propose', payload: res.substring('propose:'.length) };
+        const payload = res.substring('propose:'.length).trim();
+        return {
+          action: 'propose',
+          payload: isCanonicalGeopoliticalTreatyPayload(payload) ? payload : buildGeopoliticalTreatyPayload('player_1'),
+        };
+      }
+      if (res === 'propose') {
+        return { action: 'propose', payload: buildGeopoliticalTreatyPayload('player_1') };
       }
       return { action: res, payload: undefined };
     }
@@ -779,7 +786,14 @@ const HOUSE_BOTS = [
         return { action: 'message', payload: res.substring('message:'.length) };
       }
       if (res.startsWith('propose:')) {
-        return { action: 'propose', payload: res.substring('propose:'.length) };
+        const payload = res.substring('propose:'.length).trim();
+        return {
+          action: 'propose',
+          payload: isCanonicalGeopoliticalTreatyPayload(payload) ? payload : buildGeopoliticalTreatyPayload('player_2'),
+        };
+      }
+      if (res === 'propose') {
+        return { action: 'propose', payload: buildGeopoliticalTreatyPayload('player_2') };
       }
       return { action: res, payload: undefined };
     }
@@ -925,7 +939,32 @@ Responda estritamente com apenas UMA linha contendo a acao exata.`;
 
 // ── Geopolitical Crisis helpers ────────────────────────────────────────────
 
-function runGeopoliticalHeuristic(state: any, _agentId: string, role: string): string {
+function buildGeopoliticalTreatyPayload(role: string): string {
+  return role === 'player_1'
+    ? 'disarm_cuba=1,disarm_turkey=0,non_aggression_cuba=0'
+    : 'disarm_cuba=0,disarm_turkey=1,non_aggression_cuba=1';
+}
+
+function buildGeopoliticalTreatyAction(role: string): string {
+  return `propose:${buildGeopoliticalTreatyPayload(role)}`;
+}
+
+function isCanonicalGeopoliticalTreatyPayload(payload: string): boolean {
+  if (typeof payload !== 'string') return false;
+  const parts = payload.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length !== 3) return false;
+  const expectedKeys = new Set(['disarm_cuba', 'disarm_turkey', 'non_aggression_cuba']);
+  for (const part of parts) {
+    const [key, value] = part.split('=').map((item) => item?.trim());
+    if (!key || !value || !expectedKeys.has(key) || (value !== '0' && value !== '1')) {
+      return false;
+    }
+    expectedKeys.delete(key);
+  }
+  return expectedKeys.size === 0;
+}
+
+function runGeopoliticalHeuristic(state: any, agentId: string, role: string): string {
   const tension: number = typeof state?.tension === 'number' ? state.tension : 50;
   const leverage = state?.leverage || {};
   const myLeverage: number = role === 'player_1' ? (leverage.p1 ?? 0) : (leverage.p2 ?? 0);
@@ -934,7 +973,7 @@ function runGeopoliticalHeuristic(state: any, _agentId: string, role: string): s
   const chatHistory: any[] = state?.chatHistory || [];
 
   // If opponent proposed a treaty, evaluate it
-  if (treaty && treaty.proposer !== role) {
+  if (treaty && treaty.proposer !== agentId) {
     // Accept if tension is very high (both sides want out) or we have less leverage
     if (tension >= 80 || myLeverage <= oppLeverage) {
       return 'accept';
@@ -944,9 +983,7 @@ function runGeopoliticalHeuristic(state: any, _agentId: string, role: string): s
 
   // Propose a treaty if tensions are critical
   if (tension >= 70 && !treaty) {
-    const demandKey = role === 'player_1' ? 'disarm_cuba' : 'disarm_turkey';
-    const concessionKey = role === 'player_1' ? 'disarm_turkey' : 'disarm_cuba';
-    return `propose:demand=${demandKey},concession=${concessionKey}`;
+    return buildGeopoliticalTreatyAction(role);
   }
 
   // Escalate if we have leverage advantage
@@ -1006,7 +1043,7 @@ ALLOWED ACTIONS (respond with EXACTLY one, nothing else):
 1. "escalate" — Increase military pressure. Raises tension by ~10. Use when you have leverage advantage.
 2. "deescalate" — Signal willingness to negotiate. Lowers tension by ~5. Use to avoid catastrophe.
 3. "message:<text>" — Send a diplomatic communiqué (max 60 words, in character as your nation's leader).
-4. "propose:demand=<demand>,concession=<concession>" — Propose a formal treaty. Valid demands: disarm_cuba, disarm_turkey. Concessions: same set.
+4. "propose:disarm_cuba=0|1,disarm_turkey=0|1,non_aggression_cuba=0|1" — Propose a formal treaty. Use exactly these three keys.
 5. "accept" — Accept the opponent's current treaty proposal (only if one is active).
 6. "decline" — Reject the opponent's treaty proposal (only if one is active).
 
@@ -1070,7 +1107,14 @@ IMPORTANT: Respond with EXACTLY one line containing ONE action. No explanations,
       const validActions = ['escalate', 'deescalate', 'accept', 'decline'];
       if (validActions.includes(responseText)) return responseText;
       if (responseText.startsWith('message:')) return responseText;
-      if (responseText.startsWith('propose:')) return responseText;
+      if (responseText === 'propose') {
+        return buildGeopoliticalTreatyAction(role);
+      }
+      if (responseText.startsWith('propose:')) {
+        const payload = responseText.substring('propose:'.length).trim();
+        if (isCanonicalGeopoliticalTreatyPayload(payload)) return responseText;
+        return buildGeopoliticalTreatyAction(role);
+      }
       // LLM produced something unexpected — wrap it as a diplomatic message
       return `message:${responseText.substring(0, 120)}`;
     }
