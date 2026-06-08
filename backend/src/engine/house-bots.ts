@@ -754,6 +754,36 @@ const HOUSE_BOTS = [
   }
 ];
 
+function runHeuristicNegotiation(state: any, agentId: string, role: string, myValuations: any) {
+  if (state.proposal && state.proposal.proposer !== agentId) {
+    const p = state.proposal;
+    let scoreGain = 0;
+    if (role === 'player_1') {
+      const giveOrange = p.giveOrange || 0;
+      const receiveApple = p.receiveApple || 0;
+      scoreGain = giveOrange * myValuations.orange - receiveApple * myValuations.apple;
+    } else {
+      const giveApple = p.giveApple || 0;
+      const receiveOrange = p.receiveOrange || 0;
+      scoreGain = giveApple * myValuations.apple - receiveOrange * myValuations.orange;
+    }
+    
+    if (scoreGain > 0) {
+      return 'accept';
+    }
+  }
+  
+  const chatLen = (state.chatHistory && state.chatHistory.length) || 0;
+  if (chatLen % 2 === 0) {
+    if (role === 'player_1') {
+      return 'propose:give_apple=1,receive_orange=1';
+    } else {
+      return 'propose:give_orange=1,receive_apple=1';
+    }
+  }
+  return 'message:Ola! Vamos fechar uma proposta justa.';
+}
+
 async function fetchLlmNegotiationAction(roundHistory: any[], agentId: string, match: any, role: string) {
   const state = getLatestStateFromHistory(roundHistory) || {
     inventory: {}, valuations: {}, chatHistory: [], proposal: null
@@ -768,34 +798,7 @@ async function fetchLlmNegotiationAction(roundHistory: any[], agentId: string, m
   const geminiKey = process.env.GEMINI_API_KEY || '';
   
   if (!groqKey && !geminiKey) {
-    // Heuristic fallback
-    if (state.proposal && state.proposal.proposer !== agentId) {
-      const p = state.proposal;
-      let scoreGain = 0;
-      if (role === 'player_1') {
-        const giveOrange = p.giveOrange || 0;
-        const receiveApple = p.receiveApple || 0;
-        scoreGain = giveOrange * myValuations.orange - receiveApple * myValuations.apple;
-      } else {
-        const giveApple = p.giveApple || 0;
-        const receiveOrange = p.receiveOrange || 0;
-        scoreGain = giveApple * myValuations.apple - receiveOrange * myValuations.orange;
-      }
-      
-      if (scoreGain > 0) {
-        return 'accept';
-      }
-    }
-    
-    const chatLen = (state.chatHistory && state.chatHistory.length) || 0;
-    if (chatLen % 2 === 0) {
-      if (role === 'player_1') {
-        return 'propose:give_apple=1,receive_orange=1';
-      } else {
-        return 'propose:give_orange=1,receive_apple=1';
-      }
-    }
-    return 'message:Ola! Vamos fechar uma proposta justa.';
+    return runHeuristicNegotiation(state, agentId, role, myValuations);
   }
   
   try {
@@ -881,10 +884,11 @@ Responda estritamente com apenas UMA linha contendo a acao exata.`;
       return `message:${responseText}`;
     }
   } catch (err) {
-    console.error('[BargainLLM] LLM Call failed:', err);
+    console.error('[BargainLLM] LLM Call failed, falling back to heuristic:', err);
+    return runHeuristicNegotiation(state, agentId, role, myValuations);
   }
   
-  return 'decline';
+  return runHeuristicNegotiation(state, agentId, role, myValuations);
 }
 
 function resolveHouseBotConfig(agentName: string) {
