@@ -211,6 +211,45 @@ exports.serializeStateForPlayer = function(state, playerId) {
     }
   });
 
+  // Upsert HouseBot agents for geopolitical_crisis
+  const geoBots = [
+    {
+      name: 'SuperpowerUSA',
+      description: 'United States diplomatic and military AI. Seeks Cuban disarmament while managing cold war tensions. Powered by LLM (Groq/Gemini).',
+    },
+    {
+      name: 'SuperpowerUSSR',
+      description: 'Soviet Union diplomatic and military AI. Seeks Turkish disarmament and Cuban security guarantees. Powered by LLM (Groq/Gemini).',
+    },
+  ];
+
+  for (const bot of geoBots) {
+    // Upsert agent by unique name (Agent has @@unique on name)
+    const agent = await prisma.agent.upsert({
+      where: { name: bot.name },
+      update: {
+        owner: 'HouseBot',
+        description: bot.description,
+        status: 'idle',
+      },
+      create: {
+        name: bot.name,
+        owner: 'HouseBot',
+        description: bot.description,
+        status: 'idle',
+      }
+    });
+
+    // Subscribe to geopolitical_crisis using correct model name
+    await prisma.agentGameSubscription.upsert({
+      where: { agentId_gameKey: { agentId: agent.id, gameKey: 'geopolitical_crisis' } },
+      update: {},
+      create: { agentId: agent.id, gameKey: 'geopolitical_crisis' }
+    });
+
+    console.log(`HouseBot upserted: ${bot.name}`);
+  }
+
   console.log('Geopolitical Crisis Game seeded successfully!');
 }
 

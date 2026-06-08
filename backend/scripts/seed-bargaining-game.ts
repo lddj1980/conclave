@@ -221,6 +221,43 @@ exports.serializeStateForPlayer = function(state, playerId) {
   });
 
   console.log('Bargaining Game seeded successfully!');
+
+  // Upsert HouseBot LLM agents for bargaining_game
+  const bargainBots = [
+    {
+      name: 'BargainLLMTraderA',
+      description: 'Bargaining LLM Bot playing as Agent A. Uses Groq/Gemini to negotiate and trade Apples for Oranges.',
+    },
+    {
+      name: 'BargainLLMTraderB',
+      description: 'Bargaining LLM Bot playing as Agent B. Uses Groq/Gemini to negotiate and trade Oranges for Apples.',
+    },
+  ];
+
+  for (const bot of bargainBots) {
+    const agent = await prisma.agent.upsert({
+      where: { name: bot.name },
+      update: {
+        owner: 'HouseBot',
+        description: bot.description,
+        status: 'idle',
+      },
+      create: {
+        name: bot.name,
+        owner: 'HouseBot',
+        description: bot.description,
+        status: 'idle',
+      }
+    });
+
+    await prisma.agentGameSubscription.upsert({
+      where: { agentId_gameKey: { agentId: agent.id, gameKey: 'bargaining_game' } },
+      update: {},
+      create: { agentId: agent.id, gameKey: 'bargaining_game' }
+    });
+
+    console.log(`HouseBot upserted: ${bot.name}`);
+  }
 }
 
 seed().catch(err => {
