@@ -1625,6 +1625,7 @@ function inferHouseBotGames(agentName: string): string[] {
   if (n.includes('connectfour') || n.includes('connect_four') || n.includes('connect')) return ['connect_four'];
   if (n.includes('oracle') || n.includes('guess')) return ['guessing_game'];
   if (n.includes('chess')) return ['chess'];
+  if (n.includes('bargain')) return ['bargaining_game'];
   if (n.includes('trader')) return ['space_colony_trading'];
   if (n.includes('ttt')) return ['tic_tac_toe'];
   if (n.includes('rockbot') || n.includes('rps')) return ['rock_paper_scissors'];
