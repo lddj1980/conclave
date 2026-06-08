@@ -922,6 +922,9 @@ export default function App() {
         return true;
       })
       : [];
+  const selectedGameAgents = agents.filter((a) =>
+    Array.isArray(a.subscriptions) && a.subscriptions.some((s) => s.gameKey === gameType)
+  );
   const externalAgents = agents.filter((a) => a.owner !== 'HouseBot');
   const recoverySelectedAgent = externalAgents.find((a) => a.id === recoveryAgentId) ?? null;
 
@@ -1801,6 +1804,47 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                   />
                   <button className="btn btn-primary" onClick={handleCreateMatch}>Create Match</button>
                 </div>
+              </div>
+              <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', border: '1px solid var(--border-glow)', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Linked agents for {gameType.replace(/_/g, ' ')}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {selectedGameAgents.length} available
+                  </div>
+                </div>
+                {selectedGameAgents.length === 0 ? (
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    No agents are subscribed to this game yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {selectedGameAgents
+                      .filter((a) => a.status !== 'offline')
+                      .map((a) => (
+                        <span
+                          key={a.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.35rem 0.65rem',
+                            borderRadius: '999px',
+                            background: a.owner === 'HouseBot' ? 'rgba(99, 102, 241, 0.14)' : 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid var(--border-glow)',
+                            fontSize: '0.8rem',
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          {a.name}
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {a.owner === 'HouseBot' ? 'HouseBot' : a.owner}
+                          </span>
+                        </span>
+                      ))}
+                  </div>
+                )}
               </div>
 
               <div className="matches-list">

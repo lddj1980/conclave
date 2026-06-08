@@ -5,6 +5,9 @@ const prisma = new PrismaClient();
 function inferHouseBotGames(agentName: string): string[] {
   const n = agentName.toLowerCase();
 
+  if (n.includes('superpowerusa') || n.includes('superpowerussr') || n.includes('superpower')) {
+    return ['prisoners_dilemma', 'geopolitical_crisis'];
+  }
   if (n.includes('ttt')) return ['tic_tac_toe'];
   if (n.includes('rockbot') || n.includes('rps')) return ['rock_paper_scissors'];
   if (n.includes('hawk') || n.includes('dove')) return ['chicken'];
