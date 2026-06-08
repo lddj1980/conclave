@@ -1828,6 +1828,7 @@ exports.serializeStateForPlayer = function(state, playerId) {
 
 function inferHouseBotGames(agentName: string): string[] {
   const n = agentName.toLowerCase();
+  if (n.includes('superpowerusa') || n.includes('superpowerussr') || n.includes('superpower')) return ['prisoners_dilemma', 'geopolitical_crisis'];
   if (n.includes('budget') || n.includes('alloc')) return ['budget_allocation'];
   if (n.includes('codemaster') || n.includes('codebreaker') || n.includes('mastermind')) return ['mastermind'];
   if (n.includes('connectfour') || n.includes('connect_four') || n.includes('connect')) return ['connect_four'];
