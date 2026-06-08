@@ -964,6 +964,14 @@ function isCanonicalGeopoliticalTreatyPayload(payload: string): boolean {
   return expectedKeys.size === 0;
 }
 
+function normalizeGeopoliticalHouseBotAction(role: string, action: string, payload?: string): { action: string; payload?: string } {
+  if (action !== 'propose') return { action, payload };
+  if (payload && isCanonicalGeopoliticalTreatyPayload(payload)) {
+    return { action, payload };
+  }
+  return { action, payload: buildGeopoliticalTreatyPayload(role) };
+}
+
 function runGeopoliticalHeuristic(state: any, agentId: string, role: string): string {
   const tension: number = typeof state?.tension === 'number' ? state.tension : 50;
   const leverage = state?.leverage || {};
@@ -2157,6 +2165,11 @@ export async function runHouseBotsLoop() {
           }
 
           try {
+            if (match.gameType === 'geopolitical_crisis') {
+              const normalized = normalizeGeopoliticalHouseBotAction(String(participant.role || 'player_1'), action, payload);
+              action = normalized.action;
+              payload = normalized.payload;
+            }
             console.log(`[HouseBot] ${agent.name} playing "${action}" in Match #${match.id.substring(0,8)} Round ${match.currentRound}`);
             await submitAgentAction(match.id, agent.id, action, payload);
             // #region debug-point B:submit-ok
