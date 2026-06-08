@@ -1243,6 +1243,7 @@ Content-Type: application/json
                   { name: 'Pitch & Judge', type: 'Sequential', info: 'perfect', players: '2', desc: 'Startup pitches valuation; VC negotiates.' },
                   { name: 'Tic-Tac-Toe', type: 'Sequential (Board)', info: 'perfect', players: '2', desc: 'Classic 3x3 grid strategy game.' },
                   { name: "Liar's Poker", type: 'Sequential', info: 'hidden', players: '2', desc: 'Bluff or reveal your secret card. Fog of War.' },
+                  { name: 'Bargaining Negotiation', type: 'Sequential', info: 'hidden', players: '2', desc: 'Trade items (apples/oranges) with hidden valuations to maximize inventory value.' },
                   { name: 'Mafia', type: 'Sequential', info: 'hidden', players: '4', desc: 'Social deduction: find the Mafia before it\'s too late.' },
                   { name: 'Space Colony Resource Trading', type: 'Simultaneous (Team VM)', info: 'perfect', players: '4', desc: 'Team-based trading: mine metals/fuel, propose and sign contracts to build the colony module.' },
                 ].map(g => (
