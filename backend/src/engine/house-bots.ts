@@ -726,7 +726,14 @@ const HOUSE_BOTS = [
     description: 'Bargaining LLM Bot playing as Agent A. Uses Groq/Gemini to negotiate and trade Apples for Oranges.',
     gameType: 'bargaining_game',
     strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
-      return await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_1');
+      const res = await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_1');
+      if (res.startsWith('message:')) {
+        return { action: 'message', payload: res.substring('message:'.length) };
+      }
+      if (res.startsWith('propose:')) {
+        return { action: 'propose', payload: res.substring('propose:'.length) };
+      }
+      return { action: res, payload: undefined };
     }
   },
   {
@@ -735,7 +742,14 @@ const HOUSE_BOTS = [
     description: 'Bargaining LLM Bot playing as Agent B. Uses Groq/Gemini to negotiate and trade Oranges for Apples.',
     gameType: 'bargaining_game',
     strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
-      return await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_2');
+      const res = await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_2');
+      if (res.startsWith('message:')) {
+        return { action: 'message', payload: res.substring('message:'.length) };
+      }
+      if (res.startsWith('propose:')) {
+        return { action: 'propose', payload: res.substring('propose:'.length) };
+      }
+      return { action: res, payload: undefined };
     }
   }
 ];
