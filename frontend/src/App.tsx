@@ -2818,6 +2818,153 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                   <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
                     No rounds have started yet. Make sure two agents join and start the match.
                   </p>
+                ) : matchDetails.gameType === 'bargaining_game' ? (
+                  /* EXPLICIT DIALOGUE CHAT TIMELINE FOR BARGAINING GAME */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 0' }}>
+                    {matchDetails.rounds.map((r) => {
+                      const act = r.actions[0];
+                      const sortedRoles = [...matchDetails.participants].sort((a,b) => a.role.localeCompare(b.role));
+                      const nextRoleIndex = (r.roundNumber - 1) % sortedRoles.length;
+                      const activePart = sortedRoles[nextRoleIndex];
+                      const expectedRole = activePart?.role;
+                      const agentName = act?.agent?.name || activePart?.agent?.name || 'Agent';
+                      const isPlayer1 = expectedRole === 'player_1';
+
+                      const isMessage = act?.actionType === 'message';
+                      const isPropose = act?.actionType === 'propose';
+                      const isAccept = act?.actionType === 'accept';
+                      const isDecline = act?.actionType === 'decline';
+
+                      let giveLabel = 'Giving';
+                      let receiveLabel = 'Receiving';
+                      if (act?.payload && isPropose) {
+                        try {
+                          const parts = act.payload.split(',');
+                          const givePart = parts[0]?.split('=');
+                          const receivePart = parts[1]?.split('=');
+                          if (givePart && receivePart) {
+                            const giveName = givePart[0].includes('apple') ? '🍎 Maçãs' : '🍊 Laranjas';
+                            const receiveName = receivePart[0].includes('apple') ? '🍎 Maçãs' : '🍊 Laranjas';
+                            giveLabel = `${givePart[1]} ${giveName}`;
+                            receiveLabel = `${receivePart[1]} ${receiveName}`;
+                          } else {
+                            giveLabel = act.payload;
+                          }
+                        } catch (e) {
+                          giveLabel = act.payload;
+                        }
+                      }
+
+                      return (
+                        <div key={r.id} style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: isPlayer1 ? 'flex-start' : 'flex-end',
+                          width: '100%'
+                        }}>
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)',
+                            marginBottom: '0.25rem',
+                            alignSelf: isPlayer1 ? 'flex-start' : 'flex-end',
+                            padding: '0 0.5rem'
+                          }}>
+                            Rodada {r.roundNumber} · <strong>{agentName}</strong> ({isPlayer1 ? 'Agente A' : 'Agente B'})
+                          </div>
+
+                          {isMessage && act?.payload && (
+                            <div style={{
+                              background: isPlayer1 ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                              border: `1px solid ${isPlayer1 ? 'rgba(99, 102, 241, 0.3)' : 'rgba(16, 185, 129, 0.2)'}`,
+                              borderRadius: isPlayer1 ? '0px 16px 16px 16px' : '16px 0px 16px 16px',
+                              padding: '0.8rem 1.2rem',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.9rem',
+                              maxWidth: '80%',
+                              lineHeight: '1.4',
+                              boxShadow: 'var(--shadow-premium)'
+                            }}>
+                              <span style={{ fontStyle: 'italic' }}>"{act.payload}"</span>
+                            </div>
+                          )}
+
+                          {isPropose && act?.payload && (
+                            <div style={{
+                              background: 'rgba(245, 158, 11, 0.12)',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                              borderRadius: '16px',
+                              padding: '1rem',
+                              color: 'var(--text-primary)',
+                              maxWidth: '85%',
+                              boxShadow: 'var(--shadow-premium)'
+                            }}>
+                              <div style={{ fontSize: '0.75rem', color: '#FCD34D', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '0.5rem', letterSpacing: '0.05em' }}>
+                                📑 Proposta de Troca Comercial
+                              </div>
+                              <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', fontSize: '0.9rem' }}>
+                                <div>
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Oferece:</span>
+                                  <strong>{giveLabel}</strong>
+                                </div>
+                                <div style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>➔</div>
+                                <div>
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Pede:</span>
+                                  <strong>{receiveLabel}</strong>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {isAccept && (
+                            <div style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              borderRadius: '12px',
+                              padding: '0.6rem 1.2rem',
+                              color: '#34D399',
+                              fontWeight: 'bold',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.9rem'
+                            }}>
+                              <span>🤝</span> Acordo Aceito! Negociação Concluída
+                            </div>
+                          )}
+
+                          {isDecline && (
+                            <div style={{
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: '12px',
+                              padding: '0.6rem 1.2rem',
+                              color: '#F87171',
+                              fontWeight: 'bold',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.9rem'
+                            }}>
+                              <span>❌</span> Proposta Recusada / Encerrada
+                            </div>
+                          )}
+
+                          {!act && (
+                            <div style={{
+                              background: 'var(--bg-secondary)',
+                              border: '1px dashed var(--border-glow)',
+                              borderRadius: '12px',
+                              padding: '0.6rem 1.2rem',
+                              color: 'var(--text-muted)',
+                              fontSize: '0.85rem'
+                            }}>
+                              Aguardando decisão...
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   matchDetails.rounds.map((r) => {
                     const act = r.actions[0];
