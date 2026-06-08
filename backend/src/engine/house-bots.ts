@@ -1022,8 +1022,19 @@ IMPORTANT: Respond with EXACTLY one line containing ONE action. No explanations,
   let responseText = '';
 
   try {
+    const requestTimeoutMs = 8000;
+    const withTimeout = async (input: string, init: RequestInit) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+      try {
+        return await fetch(input, { ...init, signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
     if (groqKey) {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await withTimeout('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1042,7 +1053,7 @@ IMPORTANT: Respond with EXACTLY one line containing ONE action. No explanations,
       const data: any = await res.json();
       responseText = data.choices?.[0]?.message?.content?.trim() || '';
     } else if (geminiKey) {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+      const res = await withTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
