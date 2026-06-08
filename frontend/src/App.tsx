@@ -2818,6 +2818,275 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                   <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
                     No rounds have started yet. Make sure two agents join and start the match.
                   </p>
+                ) : matchDetails.gameType === 'geopolitical_crisis' ? (
+                  /* ════════════════════════════════════════════════════════
+                     🌍 GEOPOLITICAL CRISIS — Cold War Diplomacy Visualizer
+                     ════════════════════════════════════════════════════════ */
+                  (() => {
+                    // Extract latest state from rounds
+                    const allRounds = matchDetails.rounds;
+                    const latestRound = [...allRounds].reverse().find(r => r.payload);
+                    let latestState: any = {};
+                    try { latestState = latestRound?.payload ? JSON.parse(latestRound.payload) : {}; } catch { latestState = {}; }
+                    const tension: number = typeof latestState.tension === 'number' ? latestState.tension : 0;
+                    const leverage = latestState.leverage || {};
+                    const treaty = latestState.treaty || null;
+
+                    const tensionColor = tension >= 80 ? '#FF2222' : tension >= 60 ? '#FF8800' : tension >= 40 ? '#FFD700' : '#22DD88';
+                    const tensionLabel = tension >= 80 ? '☢️ NUCLEAR THRESHOLD' : tension >= 60 ? '🔴 CRITICAL' : tension >= 40 ? '⚡ HIGH ALERT' : '🟢 ELEVATED';
+
+                    const sortedParts = [...matchDetails.participants].sort((a, b) => a.role.localeCompare(b.role));
+                    const p1 = sortedParts[0];
+                    const p2 = sortedParts[1];
+                    const p1Flag = '🇺🇸';
+                    const p2Flag = '🇷🇺';
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '0.5rem 0' }}>
+
+                        {/* ── Tension Meter (Doomsday Clock) ── */}
+                        <div style={{
+                          background: 'radial-gradient(ellipse at center, rgba(20,0,0,0.95) 0%, #0A0000 100%)',
+                          border: `2px solid ${tensionColor}`,
+                          borderRadius: '16px',
+                          padding: '1.5rem',
+                          boxShadow: `0 0 40px ${tensionColor}55, inset 0 0 60px rgba(0,0,0,0.8)`,
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}>
+                          {/* Animated background pulse when critical */}
+                          {tension >= 70 && (
+                            <div style={{
+                              position: 'absolute', inset: 0, borderRadius: '14px',
+                              background: `radial-gradient(ellipse, ${tensionColor}15 0%, transparent 70%)`,
+                              animation: 'none',
+                              pointerEvents: 'none'
+                            }} />
+                          )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <div>
+                              <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.15em' }}>GLOBAL TENSION INDEX</div>
+                              <div style={{ fontSize: '0.85rem', color: tensionColor, fontWeight: 'bold', marginTop: '0.2rem' }}>{tensionLabel}</div>
+                            </div>
+                            <div style={{ fontSize: '2.5rem', fontWeight: '900', color: tensionColor, fontFamily: 'monospace', textShadow: `0 0 20px ${tensionColor}` }}>
+                              {tension}<span style={{ fontSize: '1rem', color: '#888' }}>/100</span>
+                            </div>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div style={{ background: '#1a0000', borderRadius: '999px', height: '14px', border: '1px solid #333', overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%',
+                              width: `${Math.min(tension, 100)}%`,
+                              background: `linear-gradient(90deg, #22DD88 0%, #FFD700 50%, #FF8800 75%, #FF2222 100%)`,
+                              backgroundSize: '400px 100%',
+                              backgroundPosition: `${-400 + tension * 4}px 0`,
+                              borderRadius: '999px',
+                              transition: 'width 0.8s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                              boxShadow: `0 0 12px ${tensionColor}99`
+                            }} />
+                          </div>
+
+                          {/* Threshold markers */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem', fontSize: '0.65rem', color: '#555' }}>
+                            <span>COLD WAR</span><span>40 HIGH</span><span>60 CRITICAL</span><span>80 ☢️</span><span>100 WAR</span>
+                          </div>
+                        </div>
+
+                        {/* ── Nations & Leverage ── */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                          {[{ part: p1, flag: p1Flag, label: 'USA', lev: leverage.p1 ?? 0, color: '#3B82F6' },
+                            { part: p2, flag: p2Flag, label: 'USSR', lev: leverage.p2 ?? 0, color: '#EF4444' }
+                          ].map(({ part, flag, label, lev, color }) => (
+                            <div key={label} style={{
+                              background: `linear-gradient(135deg, ${color}18 0%, #0A0A0F 100%)`,
+                              border: `1px solid ${color}55`,
+                              borderRadius: '12px',
+                              padding: '1rem',
+                              boxShadow: `0 0 20px ${color}22`
+                            }}>
+                              <div style={{ fontSize: '2rem' }}>{flag}</div>
+                              <div style={{ fontWeight: '700', color: '#fff', marginTop: '0.3rem' }}>{part?.agent?.name || label}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.2rem' }}>Role: {label}</div>
+                              <div style={{ marginTop: '0.75rem' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Military Leverage</div>
+                                <div style={{ background: '#111', borderRadius: '999px', height: '8px', marginTop: '0.3rem', border: `1px solid ${color}33` }}>
+                                  <div style={{ width: `${Math.min(lev * 10, 100)}%`, height: '100%', background: color, borderRadius: '999px', transition: 'width 0.6s ease', boxShadow: `0 0 6px ${color}` }} />
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color, fontWeight: 'bold', marginTop: '0.3rem' }}>{lev} units</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* ── Active Treaty Proposal ── */}
+                        {treaty && (
+                          <div style={{
+                            background: 'linear-gradient(135deg, rgba(234,179,8,0.12) 0%, #0A0A0F 100%)',
+                            border: '1px solid rgba(234,179,8,0.5)',
+                            borderRadius: '14px',
+                            padding: '1.25rem',
+                            boxShadow: '0 0 30px rgba(234,179,8,0.15)'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '1.4rem' }}>📜</span>
+                              <div>
+                                <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.15em' }}>CLASSIFIED — ACTIVE TREATY PROPOSAL</div>
+                                <div style={{ fontWeight: '700', color: '#FCD34D', fontSize: '0.95rem' }}>Mutual Disarmament Accord</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.85rem' }}>
+                              <div style={{ background: '#0A0000', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(234,179,8,0.2)' }}>
+                                <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Demand</div>
+                                <div style={{ color: '#FBBF24', fontWeight: '600' }}>{String(treaty.demand || '').replace(/_/g, ' ').toUpperCase()}</div>
+                              </div>
+                              <div style={{ background: '#0A0000', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(234,179,8,0.2)' }}>
+                                <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Concession Offered</div>
+                                <div style={{ color: '#34D399', fontWeight: '600' }}>{String(treaty.concession || '').replace(/_/g, ' ').toUpperCase()}</div>
+                              </div>
+                            </div>
+                            <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#888' }}>
+                              Proposed by: <strong style={{ color: '#FCD34D' }}>{treaty.proposer === 'player_1' ? p1?.agent?.name || 'USA' : p2?.agent?.name || 'USSR'}</strong>
+                              {' '} — Awaiting response from the other superpower.
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ── Diplomatic Timeline ── */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#555', textTransform: 'uppercase', letterSpacing: '0.12em', paddingLeft: '0.5rem' }}>Diplomatic Transmission Log</div>
+                          {allRounds.map((r) => {
+                            const act = r.actions[0];
+                            if (!act) return null;
+                            const sortedRoles = [...matchDetails.participants].sort((a, b) => a.role.localeCompare(b.role));
+                            const roleIdx = (r.roundNumber - 1) % sortedRoles.length;
+                            const activePart = sortedRoles[roleIdx];
+                            const isP1 = activePart?.role === 'player_1';
+                            const flag = isP1 ? p1Flag : p2Flag;
+                            const nationColor = isP1 ? '#3B82F6' : '#EF4444';
+                            const agentDisplayName = act?.agent?.name || activePart?.agent?.name || (isP1 ? 'USA' : 'USSR');
+                            const aType = act.actionType;
+
+                            const isEscalate = aType === 'escalate';
+                            const isDeescalate = aType === 'deescalate';
+                            const isMessage = aType === 'message';
+                            const isPropose = aType === 'propose';
+                            const isAccept = aType === 'accept';
+                            const isDecline = aType === 'decline';
+
+                            let treatyDemand = '', treatyConcession = '';
+                            if (isPropose && act.payload) {
+                              try {
+                                const parts = act.payload.split(',');
+                                treatyDemand = (parts[0]?.split('=')[1] || '').replace(/_/g, ' ').toUpperCase();
+                                treatyConcession = (parts[1]?.split('=')[1] || '').replace(/_/g, ' ').toUpperCase();
+                              } catch {}
+                            }
+
+                            return (
+                              <div key={r.id} style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: isP1 ? 'flex-start' : 'flex-end',
+                                width: '100%',
+                                gap: '0.3rem'
+                              }}>
+                                <div style={{ fontSize: '0.7rem', color: '#666', padding: '0 0.5rem' }}>
+                                  {flag} <strong style={{ color: nationColor }}>{agentDisplayName}</strong> · Turn {r.roundNumber}
+                                </div>
+
+                                {isMessage && act.payload && (
+                                  <div style={{
+                                    background: `linear-gradient(135deg, ${nationColor}18 0%, #0A0A0F 100%)`,
+                                    border: `1px solid ${nationColor}44`,
+                                    borderRadius: isP1 ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                                    padding: '0.9rem 1.2rem',
+                                    maxWidth: '80%',
+                                    color: '#E2E8F0',
+                                    fontSize: '0.9rem',
+                                    lineHeight: '1.5',
+                                    fontStyle: 'italic',
+                                    boxShadow: `0 4px 16px ${nationColor}22`
+                                  }}>
+                                    "{act.payload}"
+                                  </div>
+                                )}
+
+                                {isEscalate && (
+                                  <div style={{
+                                    background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.5)',
+                                    borderRadius: '10px', padding: '0.6rem 1.1rem',
+                                    color: '#F87171', fontWeight: '700', fontSize: '0.85rem',
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                    boxShadow: '0 0 16px rgba(239,68,68,0.25)'
+                                  }}>
+                                    ⚡ MILITARY ESCALATION — Pressure increased
+                                  </div>
+                                )}
+
+                                {isDeescalate && (
+                                  <div style={{
+                                    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
+                                    borderRadius: '10px', padding: '0.6rem 1.1rem',
+                                    color: '#4ADE80', fontWeight: '700', fontSize: '0.85rem',
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                  }}>
+                                    🕊️ DE-ESCALATION SIGNAL — Diplomatic overture
+                                  </div>
+                                )}
+
+                                {isPropose && (
+                                  <div style={{
+                                    background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.45)',
+                                    borderRadius: '14px', padding: '1rem 1.25rem',
+                                    maxWidth: '88%', boxShadow: '0 0 20px rgba(234,179,8,0.12)'
+                                  }}>
+                                    <div style={{ fontSize: '0.7rem', color: '#FBBF24', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: '700', marginBottom: '0.6rem' }}>
+                                      📜 TREATY PROPOSAL
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
+                                      <div><span style={{ color: '#888', fontSize: '0.7rem', display: 'block' }}>DEMANDS</span><strong style={{ color: '#FBBF24' }}>{treatyDemand || act.payload}</strong></div>
+                                      <div style={{ color: '#444', fontSize: '1.2rem' }}>⇔</div>
+                                      <div><span style={{ color: '#888', fontSize: '0.7rem', display: 'block' }}>CONCEDES</span><strong style={{ color: '#34D399' }}>{treatyConcession}</strong></div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {isAccept && (
+                                  <div style={{
+                                    background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)',
+                                    borderRadius: '12px', padding: '0.7rem 1.3rem',
+                                    color: '#34D399', fontWeight: '800', fontSize: '0.95rem',
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.6rem',
+                                    boxShadow: '0 0 24px rgba(16,185,129,0.3)'
+                                  }}>
+                                    ✅ TREATY ACCEPTED — Nuclear War Averted
+                                  </div>
+                                )}
+
+                                {isDecline && (
+                                  <div style={{
+                                    background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)',
+                                    borderRadius: '12px', padding: '0.7rem 1.3rem',
+                                    color: '#F87171', fontWeight: '700', fontSize: '0.88rem',
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem'
+                                  }}>
+                                    ❌ TREATY REJECTED — Negotiations collapse
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {allRounds.length === 0 && (
+                            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                              Awaiting diplomatic transmissions...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
                 ) : matchDetails.gameType === 'bargaining_game' ? (
                   /* EXPLICIT DIALOGUE CHAT TIMELINE FOR BARGAINING GAME */
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 0' }}>

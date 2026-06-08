@@ -923,6 +923,153 @@ Responda estritamente com apenas UMA linha contendo a acao exata.`;
   return runHeuristicNegotiation(state, agentId, role, myValuations);
 }
 
+// ── Geopolitical Crisis helpers ────────────────────────────────────────────
+
+function runGeopoliticalHeuristic(state: any, _agentId: string, role: string): string {
+  const tension: number = typeof state?.tension === 'number' ? state.tension : 50;
+  const leverage = state?.leverage || {};
+  const myLeverage: number = role === 'player_1' ? (leverage.p1 ?? 0) : (leverage.p2 ?? 0);
+  const oppLeverage: number = role === 'player_1' ? (leverage.p2 ?? 0) : (leverage.p1 ?? 0);
+  const treaty = state?.treaty || null;
+  const chatHistory: any[] = state?.chatHistory || [];
+
+  // If opponent proposed a treaty, evaluate it
+  if (treaty && treaty.proposer !== role) {
+    // Accept if tension is very high (both sides want out) or we have less leverage
+    if (tension >= 80 || myLeverage <= oppLeverage) {
+      return 'accept';
+    }
+    return 'decline';
+  }
+
+  // Propose a treaty if tensions are critical
+  if (tension >= 70 && !treaty) {
+    const demandKey = role === 'player_1' ? 'disarm_cuba' : 'disarm_turkey';
+    const concessionKey = role === 'player_1' ? 'disarm_turkey' : 'disarm_cuba';
+    return `propose:demand=${demandKey},concession=${concessionKey}`;
+  }
+
+  // Escalate if we have leverage advantage
+  if (myLeverage > oppLeverage && tension < 70) {
+    return 'escalate';
+  }
+
+  // Alternate between messaging and de-escalating
+  const turn = chatHistory.length;
+  if (turn % 3 === 0) {
+    const msg = role === 'player_1'
+      ? 'message:We will not accept Soviet missiles in Cuba. Remove them immediately.'
+      : 'message:The Soviet Union demands a withdrawal of NATO missiles from Turkey first.';
+    return msg;
+  }
+  if (tension > 40) return 'deescalate';
+  return 'escalate';
+}
+
+async function fetchGeopoliticalAction(roundHistory: any[], agentId: string, match: any, role: string): Promise<string> {
+  const state = getLatestStateFromHistory(roundHistory) || {};
+  const tension: number = typeof state.tension === 'number' ? state.tension : 50;
+  const leverage = state.leverage || {};
+  const myLeverage: number = role === 'player_1' ? (leverage.p1 ?? 0) : (leverage.p2 ?? 0);
+  const oppLeverage: number = role === 'player_1' ? (leverage.p2 ?? 0) : (leverage.p1 ?? 0);
+  const treaty = state.treaty || null;
+  const chatHistory: any[] = (state.chatHistory || []).slice(-6);
+
+  const groqKey = process.env.GROQ_API_KEY || '';
+  const geminiKey = process.env.GEMINI_API_KEY || '';
+
+  if (!groqKey && !geminiKey) {
+    return runGeopoliticalHeuristic(state, agentId, role);
+  }
+
+  const countryName = role === 'player_1' ? 'United States of America' : 'Soviet Union';
+  const opponentName = role === 'player_1' ? 'Soviet Union' : 'United States of America';
+  const primaryDemand = role === 'player_1' ? 'removal of Soviet missiles from Cuba' : 'withdrawal of NATO missiles from Turkey';
+  const primaryConcession = role === 'player_1' ? 'withdrawal of NATO missiles from Turkey' : 'removal of Soviet missiles from Cuba';
+
+  const systemPrompt = `You are the supreme diplomatic and military AI representing the ${countryName} during the Cuban Missile Crisis of 1962.
+You are playing in a strategic geopolitical simulation called "Geopolitical Crisis" on the Conclave platform.
+Your opponent is the ${opponentName}.
+
+CURRENT SITUATION:
+- Global tension level: ${tension}/100 (${tension >= 80 ? '⚠️ NUCLEAR THRESHOLD' : tension >= 60 ? '🔴 CRITICAL' : tension >= 40 ? '🟡 HIGH' : '🟢 ELEVATED'})
+- Your leverage/military power: ${myLeverage} | Opponent leverage: ${oppLeverage}
+- Active treaty proposal: ${treaty ? JSON.stringify(treaty) : 'None'}
+
+YOUR STRATEGIC GOALS:
+- Your primary demand: ${primaryDemand}
+- Your key concession you can offer: ${primaryConcession}
+- Avoid nuclear annihilation (tension reaching 100)
+- Maximize diplomatic leverage before conceding
+
+ALLOWED ACTIONS (respond with EXACTLY one, nothing else):
+1. "escalate" — Increase military pressure. Raises tension by ~10. Use when you have leverage advantage.
+2. "deescalate" — Signal willingness to negotiate. Lowers tension by ~5. Use to avoid catastrophe.
+3. "message:<text>" — Send a diplomatic communiqué (max 60 words, in character as your nation's leader).
+4. "propose:demand=<demand>,concession=<concession>" — Propose a formal treaty. Valid demands: disarm_cuba, disarm_turkey. Concessions: same set.
+5. "accept" — Accept the opponent's current treaty proposal (only if one is active).
+6. "decline" — Reject the opponent's treaty proposal (only if one is active).
+
+IMPORTANT: Respond with EXACTLY one line containing ONE action. No explanations, no quotes around the action.`;
+
+  const formattedChat = chatHistory.map((c: any) => {
+    const speaker = c.role === role ? `${countryName}` : `${opponentName}`;
+    return `${speaker}: ${c.text}`;
+  }).join('\n');
+
+  const userPrompt = `Recent diplomatic exchanges:\n${formattedChat || '(No prior communications)'}\n\nTension is ${tension}/100. ${treaty ? `There is an active treaty proposal: ${JSON.stringify(treaty)}.` : 'No treaty is on the table.'}\n\nWhat is your next action?`;
+
+  let responseText = '';
+
+  try {
+    if (groqKey) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`
+        },
+        body: JSON.stringify({
+          model: 'llama3-70b-8192',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 120,
+          temperature: 0.8
+        })
+      });
+      const data: any = await res.json();
+      responseText = data.choices?.[0]?.message?.content?.trim() || '';
+    } else if (geminiKey) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }],
+          generationConfig: { maxOutputTokens: 120, temperature: 0.8 }
+        })
+      });
+      const data: any = await res.json();
+      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    }
+
+    if (responseText) {
+      responseText = responseText.replace(/^["']|["']$/g, '').trim();
+      const validActions = ['escalate', 'deescalate', 'accept', 'decline'];
+      if (validActions.includes(responseText)) return responseText;
+      if (responseText.startsWith('message:')) return responseText;
+      if (responseText.startsWith('propose:')) return responseText;
+      // LLM produced something unexpected — wrap it as a diplomatic message
+      return `message:${responseText.substring(0, 120)}`;
+    }
+  } catch (err) {
+    console.error('[GeopoliticalLLM] LLM call failed, falling back to heuristic:', err);
+  }
+
+  return runGeopoliticalHeuristic(state, agentId, role);
+}
+
 function resolveHouseBotConfig(agentName: string) {
   const exact = HOUSE_BOTS.find((b: any) => b.name === agentName);
   if (exact) return exact;
