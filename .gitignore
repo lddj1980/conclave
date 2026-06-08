@@ -146,3 +146,6 @@ vite.config.ts.timestamp-*
 backend/prisma/legacy-agent-bootstrap-tokens.json
 backend/prisma/legacy-agent-bootstrap-tokens-*.json
 backend/scripts/mcp_test_agent_state.json
+
+# HyperFrames Video Output
+backend/output/

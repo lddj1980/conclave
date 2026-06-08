@@ -60,7 +60,7 @@ export function runHouseBotsMatchMakerLoop() {
       // Join bots to match
       const roles = ['player_1', 'player_2'];
       for (let i = 0; i < selectedBots.length; i++) {
-        await prisma.participant.create({
+        await prisma.matchParticipant.create({
           data: {
             matchId: match.id,
             agentId: selectedBots[i].id,
