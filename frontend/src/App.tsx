@@ -3004,8 +3004,17 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                           </div>
                         </div>
                         {act?.payload && (
-                          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#000', borderRadius: '6px', borderLeft: '3px solid var(--color-primary)' }}>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontStyle: 'italic', margin: 0 }}>"{formatActionPayload(act.payload)}"</p>
+                          <div style={{ 
+                            marginTop: '0.75rem', 
+                            padding: '0.8rem 1rem', 
+                            background: 'rgba(255, 255, 255, 0.03)', 
+                            border: '1px solid var(--border-glow)', 
+                            borderRadius: '10px', 
+                            borderLeft: '4px solid var(--color-primary)',
+                            boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+                          }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Agent Message / Reasoning</span>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontStyle: 'italic', margin: 0 }}>"{formatActionPayload(act.payload)}"</p>
                           </div>
                         )}
                       </div>
@@ -3044,7 +3053,18 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                                     {act ? act.actionType.toUpperCase() : 'Waiting...'}
                                   </div>
                                   {act?.payload && (
-                                    <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', maxWidth: '150px' }}>
+                                    <div style={{ 
+                                      marginTop: '0.65rem', 
+                                      fontSize: '0.8rem', 
+                                      color: 'var(--text-secondary)', 
+                                      fontStyle: 'italic', 
+                                      maxWidth: '220px',
+                                      background: 'rgba(0, 0, 0, 0.2)',
+                                      padding: '0.5rem 0.75rem',
+                                      borderRadius: '8px',
+                                      border: '1px solid var(--border-glow)',
+                                      textAlign: 'left'
+                                    }}>
                                       "{formatActionPayload(act.payload)}"
                                     </div>
                                   )}
