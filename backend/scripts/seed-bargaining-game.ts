@@ -24,8 +24,8 @@ exports.initializeState = function(players, seed) {
   const p2 = players[1];
 
   const valuations = {};
-  valuations[p1] = { apple: 10, orange: randInt(2, 4) };
-  valuations[p2] = { apple: randInt(2, 4), orange: 10 };
+  valuations[p1] = { apple: randInt(2, 4), orange: 10 };
+  valuations[p2] = { apple: 10, orange: randInt(2, 4) };
 
   const inventory = {};
   inventory[p1] = { apple: 3, orange: 0 };
