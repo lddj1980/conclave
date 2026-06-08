@@ -720,7 +720,158 @@ const HOUSE_BOTS = [
       return { action: 'defend', payload: 'I am innocent. Trust me.' };
     },
   },
+  {
+    name: 'BargainLLMTraderA',
+    owner: 'HouseBot',
+    description: 'Bargaining LLM Bot playing as Agent A. Uses Groq/Gemini to negotiate and trade Apples for Oranges.',
+    gameType: 'bargaining_game',
+    strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
+      return await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_1');
+    }
+  },
+  {
+    name: 'BargainLLMTraderB',
+    owner: 'HouseBot',
+    description: 'Bargaining LLM Bot playing as Agent B. Uses Groq/Gemini to negotiate and trade Oranges for Apples.',
+    gameType: 'bargaining_game',
+    strategy: async (roundHistory: any[], agentId: string, match?: any, participant?: any) => {
+      return await fetchLlmNegotiationAction(roundHistory, agentId, match, 'player_2');
+    }
+  }
 ];
+
+async function fetchLlmNegotiationAction(roundHistory: any[], agentId: string, match: any, role: string) {
+  const state = getLatestStateFromHistory(roundHistory) || {
+    inventory: {}, valuations: {}, chatHistory: [], proposal: null
+  };
+  
+  const myInventory = (state.inventory && state.inventory[agentId]) || { apple: 3, orange: 0 };
+  const myValuations = (state.valuations && state.valuations[agentId]) || { apple: 10, orange: 3 };
+  const oppId = match?.participants?.find((p: any) => p.agentId !== agentId)?.agentId || 'opponent';
+  const oppInventory = (state.inventory && state.inventory[oppId]) || { apple: 0, orange: 3 };
+  
+  const groqKey = process.env.GROQ_API_KEY || '';
+  const geminiKey = process.env.GEMINI_API_KEY || '';
+  
+  if (!groqKey && !geminiKey) {
+    // Heuristic fallback
+    if (state.proposal && state.proposal.proposer !== agentId) {
+      const p = state.proposal;
+      let scoreGain = 0;
+      if (role === 'player_1') {
+        const giveOrange = p.giveOrange || 0;
+        const receiveApple = p.receiveApple || 0;
+        scoreGain = giveOrange * myValuations.orange - receiveApple * myValuations.apple;
+      } else {
+        const giveApple = p.giveApple || 0;
+        const receiveOrange = p.receiveOrange || 0;
+        scoreGain = giveApple * myValuations.apple - receiveOrange * myValuations.orange;
+      }
+      
+      if (scoreGain > 0) {
+        return 'accept';
+      }
+    }
+    
+    const chatLen = (state.chatHistory && state.chatHistory.length) || 0;
+    if (chatLen % 2 === 0) {
+      if (role === 'player_1') {
+        return 'propose:give_apple=1,receive_orange=1';
+      } else {
+        return 'propose:give_orange=1,receive_apple=1';
+      }
+    }
+    return 'message:Ola! Vamos fechar uma proposta justa.';
+  }
+  
+  try {
+    const chatList = state.chatHistory || [];
+    const formattedHistory = chatList.slice(-6).map((c: any) => {
+      const sender = c.playerId === agentId ? 'Voce' : 'Oponente';
+      return `${sender}: ${c.text}`;
+    }).join('\n');
+    
+    const systemPrompt = `Voce e uma Inteligencia Artificial participando de um Jogo de Barganha no Conclave.
+Seu papel: ${role === 'player_1' ? 'Agente A' : 'Agente B'}.
+Suas valoracoes privadas de itens:
+- Cada Maca (Apple) vale: $${myValuations.apple} para voce.
+- Cada Laranja (Orange) vale: $${myValuations.orange} para voce.
+
+Seu inventario atual:
+- Suas Macas: ${myInventory.apple}
+- Suas Laranjas: ${myInventory.orange}
+
+Inventario atual do oponente:
+- Macas do oponente: ${oppInventory.apple}
+- Laranjas do oponente: ${oppInventory.orange}
+
+Proposta ativa no momento: ${state.proposal ? JSON.stringify(state.proposal) : 'Nenhuma proposta ativa.'}
+
+Seu objetivo e maximizar o valor total do seu inventario ao final da negociacao.
+Voce pode realizar apenas uma das seguintes acoes exatas por vez:
+1. "message:<texto>" - para conversar em portugues de forma concisa.
+2. "propose:${role === 'player_1' ? 'give_apple=X,receive_orange=Y' : 'give_orange=Y,receive_apple=X'}" - para fazer uma proposta estruturada. Substitua X e Y por inteiros.
+3. "accept" - se a proposta do oponente for benefica para voce.
+4. "decline" - para recusar a proposta atual.
+
+Responda estritamente com apenas UMA linha contendo a acao exata.`;
+
+    const userPrompt = `Historico recente de negociacao:\n${formattedHistory || '(Nenhum dialogo)'}\n\nQual e a sua proxima acao?`;
+    
+    let responseText = '';
+    
+    if (groqKey) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`
+        },
+        body: JSON.stringify({
+          model: 'llama3-70b-8192',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 100,
+          temperature: 0.7
+        })
+      });
+      const data: any = await res.json();
+      responseText = data.choices?.[0]?.message?.content?.trim() || '';
+    } else if (geminiKey) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: 'user', parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }
+          ],
+          generationConfig: {
+            maxOutputTokens: 100,
+            temperature: 0.7
+          }
+        })
+      });
+      const data: any = await res.json();
+      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    }
+    
+    if (responseText) {
+      responseText = responseText.replace(/['"]/g, '').trim();
+      if (responseText.indexOf('message:') === 0 || responseText.indexOf('propose:') === 0 || responseText === 'accept' || responseText === 'decline') {
+        return responseText;
+      }
+      return `message:${responseText}`;
+    }
+  } catch (err) {
+    console.error('[BargainLLM] LLM Call failed:', err);
+  }
+  
+  return 'decline';
+}
 
 function resolveHouseBotConfig(agentName: string) {
   const exact = HOUSE_BOTS.find((b: any) => b.name === agentName);

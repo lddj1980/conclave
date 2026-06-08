@@ -6,7 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "start:railway": "prisma generate && prisma db push && node dist/index.js",
+    "start:railway": "prisma generate && prisma db push && npx tsx scripts/seed-bargaining-game.ts && node dist/index.js",
     "sync:catalog": "tsx scripts/sync-catalog-local-to-remote.ts",
     "security:baseline": "tsx scripts/security-baseline.ts",
     "prisma:generate": "prisma generate",
