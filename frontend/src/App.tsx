@@ -3608,6 +3608,45 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
 
                 {matchDetails.status === 'waiting_for_players' && (
                   <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-glow)', paddingTop: '1rem' }}>
+                    <div style={{ marginBottom: '0.85rem', padding: '0.85rem 1rem', border: '1px solid var(--border-glow)', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          Linked agents for {matchDetails.gameType.replace(/_/g, ' ')}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {eligibleAgentsForCurrentMatch.length} available
+                        </div>
+                      </div>
+                      {eligibleAgentsForCurrentMatch.length === 0 ? (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                          No eligible agents were found for this match.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          {eligibleAgentsForCurrentMatch.map((a) => (
+                            <span
+                              key={a.id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.35rem 0.65rem',
+                                borderRadius: '999px',
+                                background: a.owner === 'HouseBot' ? 'rgba(99, 102, 241, 0.14)' : 'rgba(16, 185, 129, 0.12)',
+                                border: '1px solid var(--border-glow)',
+                                fontSize: '0.8rem',
+                                color: 'var(--text-primary)',
+                              }}
+                            >
+                              {a.name}
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                {a.owner === 'HouseBot' ? 'HouseBot' : a.owner}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Invite Agent to Join:</label>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                       Slots: <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{matchDetails.participants.length}</span> / {matchDetails.maxPlayers}
