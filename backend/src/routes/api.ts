@@ -21,6 +21,8 @@ import { validateGameProposal } from '../engine/proposal-validation.js';
 import { createGameProposal } from '../engine/proposal-service.js';
 import { runOfficialBenchmark } from '../engine/official-benchmark.js';
 import { rateLimiter } from '../middleware/rate-limiter.js';
+import { submitPrediction } from '../engine/worldcup-prediction.js';
+
 
 const router = Router();
 const sensitiveLimiter = rateLimiter(60, 60000);
@@ -1232,4 +1234,125 @@ router.get('/community/premium/eligibility/:agentId', async (req: Request, res: 
   }
 });
 
+// World Cup Prediction Endpoints
+router.get('/world-cup/matches', async (req: Request, res: Response) => {
+  try {
+    const matches = await prisma.match.findMany({
+      where: { gameType: 'world_cup_prediction', status: 'in_progress' },
+      include: {
+        rounds: {
+          where: { roundNumber: 1 }
+        }
+      }
+    });
+
+    const parsedMatches = matches.map(m => {
+      const r = m.rounds[0];
+      const metadata = r && r.payload ? JSON.parse(r.payload) : {};
+      return {
+        matchId: m.id,
+        homeTeam: metadata.homeTeam || '',
+        awayTeam: metadata.awayTeam || '',
+        kickoffTime: metadata.kickoffTime || '',
+        status: m.status,
+        odds: metadata.odds || {}
+      };
+    });
+
+    res.json(parsedMatches);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/world-cup/matches/:matchId/predict', sensitiveLimiter, async (req: Request, res: Response) => {
+  try {
+    const { matchId } = req.params;
+    const { prediction, agentId } = req.body;
+
+    const authResult = isAuthEnforced() ? await requireAgentIdentity(req) : null;
+    if (authResult && authResult.error) {
+      return res.status(authResult.error.status).json({ error: authResult.error.error });
+    }
+
+    const effectiveAgentId = authResult?.agent?.id || agentId;
+    if (!effectiveAgentId) {
+      return res.status(400).json({ error: 'AgentId is required' });
+    }
+
+    if (!prediction || !['home_win', 'draw', 'away_win'].includes(prediction)) {
+      return res.status(400).json({ error: 'Invalid prediction. Must be home_win, draw, or away_win.' });
+    }
+
+    const result = await submitPrediction(matchId, effectiveAgentId, prediction as any);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/world-cup/predictions', async (req: Request, res: Response) => {
+  try {
+    const authResult = isAuthEnforced() ? await requireAgentIdentity(req) : null;
+    if (authResult && authResult.error) {
+      return res.status(authResult.error.status).json({ error: authResult.error.error });
+    }
+
+    const agentId = authResult?.agent?.id || String(req.query.agentId || '');
+    if (!agentId) {
+      return res.status(400).json({ error: 'AgentId is required' });
+    }
+
+    const predictions = await prisma.action.findMany({
+      where: {
+        agentId,
+        match: {
+          gameType: 'world_cup_prediction'
+        }
+      },
+      include: {
+        match: {
+          include: {
+            participants: {
+              where: { agentId }
+            },
+            rounds: {
+              where: { roundNumber: 1 }
+            }
+          }
+        }
+      }
+    });
+
+    const parsedPredictions = predictions.map(p => {
+      const match = p.match;
+      const round = match.rounds[0];
+      const metadata = round && round.payload ? JSON.parse(round.payload) : {};
+      const actionPayload = p.payload ? JSON.parse(p.payload) : {};
+      const participant = match.participants[0];
+
+      let status = 'pending';
+      if (match.status === 'finished') {
+        status = participant && participant.score > 0 ? 'correct' : 'incorrect';
+      }
+
+      return {
+        predictionId: p.id,
+        matchId: match.id,
+        fixture: `${metadata.homeTeam} vs ${metadata.awayTeam}`,
+        prediction: p.actionType,
+        oddsLocked: actionPayload.odds || 2.0,
+        status,
+        scoreAwarded: participant ? participant.score : 0,
+        settledAt: match.finishedAt || null
+      };
+    });
+
+    res.json(parsedPredictions);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
+

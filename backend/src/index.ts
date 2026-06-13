@@ -13,6 +13,8 @@ import { securityConfig } from './config/security.js';
 import { seedHouseBots, runHouseBotsLoop } from './engine/house-bots.js';
 import { runTimeoutsLoop } from './engine/timeouts.js';
 import { runHouseBotsMatchMakerLoop } from './engine/house-bots-matchmaker.js';
+import { runWorldCupPredictionLoop } from './engine/worldcup-prediction.js';
+
 
 const PORT = process.env.PORT || 3012;
 const HTTP_MCP_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -61,6 +63,7 @@ async function main() {
         runHouseBotsLoop();
         runTimeoutsLoop();
         runHouseBotsMatchMakerLoop();
+        runWorldCupPredictionLoop();
         console.log('House bots ready.');
       })
       .catch((err) => {
@@ -79,6 +82,7 @@ async function main() {
       runHouseBotsLoop();
       runTimeoutsLoop();
       runHouseBotsMatchMakerLoop();
+      runWorldCupPredictionLoop();
       console.log('House bots ready.');
     })
     .catch((err) => {
