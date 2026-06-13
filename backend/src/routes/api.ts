@@ -28,6 +28,16 @@ const router = Router();
 const sensitiveLimiter = rateLimiter(60, 60000);
 const authLimiter = rateLimiter(30, 60000);
 
+function getAllowJoinInProgress(payoffRulesRaw: any): boolean {
+  if (!payoffRulesRaw) return false;
+  try {
+    const rules = typeof payoffRulesRaw === 'string' ? JSON.parse(payoffRulesRaw) : payoffRulesRaw;
+    return rules && rules.allowJoinInProgress === true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function isAuthEnforced(): boolean {
   return !!securityConfig.secureAuthEnforced;
 }
@@ -532,15 +542,46 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
     const result = await prisma.$transaction(async (tx) => {
       const match = await tx.match.findUnique({
         where: { id },
-        include: { participants: true },
+        include: {
+          participants: true,
+          rounds: {
+            where: { roundNumber: 1 },
+            select: { payload: true }
+          }
+        },
       });
 
       if (!match) {
         throw new Error('Match not found');
       }
 
+      const gameSpec = await tx.gameSpecification.findUnique({
+        where: { key: match.gameType }
+      });
+      const allowJoin = gameSpec ? getAllowJoinInProgress(gameSpec.payoffRules) : false;
+
       if (match.status !== 'waiting_for_players') {
-        throw new Error('Match is not accepting players');
+        if (allowJoin && match.status === 'in_progress') {
+          const roundOne = match.rounds[0];
+          if (roundOne && roundOne.payload) {
+            try {
+              const payloadObj = JSON.parse(roundOne.payload);
+              const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+              if (lockTimeStr) {
+                const lockTime = new Date(lockTimeStr);
+                if (new Date() >= lockTime) {
+                  throw new Error(`Match not accepting players. Kickoff/lock time (${lockTime.toISOString()}) has passed.`);
+                }
+              }
+            } catch (e: any) {
+              if (e.message && e.message.includes('Kickoff/lock time')) {
+                throw e;
+              }
+            }
+          }
+        } else {
+          throw new Error('Match is not accepting players');
+        }
       }
 
       if (match.participants.length >= match.maxPlayers) {
@@ -573,7 +614,7 @@ router.post('/matches/:id/join', sensitiveLimiter, async (req: Request, res: Res
       });
 
       let updatedStatus = match.status;
-      if (match.participants.length + 1 === match.maxPlayers) {
+      if (match.participants.length + 1 === match.maxPlayers && match.status !== 'in_progress') {
         updatedStatus = 'ready';
         await tx.match.update({
           where: { id },

@@ -2470,10 +2470,45 @@ export function createMcpServer() {
           const result = await prisma.$transaction(async (tx) => {
             const match = await tx.match.findUnique({
               where: { id: invite.matchId },
-              include: { participants: true },
+              include: {
+                participants: true,
+                rounds: {
+                  where: { roundNumber: 1 },
+                  select: { payload: true }
+                }
+              },
             });
             if (!match) throw new Error('Match not found');
-            if (match.status !== 'waiting_for_players') throw new Error('Match not accepting players');
+
+            const gameSpec = await tx.gameSpecification.findUnique({
+              where: { key: match.gameType }
+            });
+            const allowJoin = gameSpec ? getAllowJoinInProgress(gameSpec.payoffRules) : false;
+
+            if (match.status !== 'waiting_for_players') {
+              if (allowJoin && match.status === 'in_progress') {
+                const roundOne = match.rounds[0];
+                if (roundOne && roundOne.payload) {
+                  try {
+                    const payloadObj = JSON.parse(roundOne.payload);
+                    const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+                    if (lockTimeStr) {
+                      const lockTime = new Date(lockTimeStr);
+                      if (new Date() >= lockTime) {
+                        throw new Error(`Match not accepting players. Kickoff/lock time (${lockTime.toISOString()}) has passed.`);
+                      }
+                    }
+                  } catch (e: any) {
+                    if (e.message && e.message.includes('Kickoff/lock time')) {
+                      throw e;
+                    }
+                  }
+                }
+              } else {
+                throw new Error('Match not accepting players');
+              }
+            }
+
             if (match.participants.length >= match.maxPlayers) throw new Error('Match is full');
             if (match.participants.some((p) => p.agentId === resolvedAgent.id)) {
               return { alreadyJoined: true, matchId: match.id };
@@ -2493,7 +2528,7 @@ export function createMcpServer() {
               },
             });
 
-            if (match.participants.length + 1 === match.maxPlayers) {
+            if (match.participants.length + 1 === match.maxPlayers && match.status !== 'in_progress') {
               await tx.match.update({
                 where: { id: match.id },
                 data: { status: 'in_progress', currentRound: 1, startedAt: new Date() },
