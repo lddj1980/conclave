@@ -97,8 +97,22 @@ function sanitizeAgentForPublicView(agent: any, viewerAgentId?: string | null) {
 
 function sanitizeMatchForPublicView(match: any, viewerAgentId?: string | null) {
   if (!match) return match;
+
+  let description = undefined;
+  if (match.gameType === 'world_cup_prediction' && Array.isArray(match.rounds) && match.rounds[0]?.payload) {
+    try {
+      const payload = typeof match.rounds[0].payload === 'string' 
+        ? JSON.parse(match.rounds[0].payload) 
+        : match.rounds[0].payload;
+      if (payload && payload.homeTeam && payload.awayTeam) {
+        description = `${payload.homeTeam} vs ${payload.awayTeam}`;
+      }
+    } catch (e) {}
+  }
+
   return {
     ...match,
+    description,
     participants: Array.isArray(match.participants)
       ? match.participants.map((participant: any) => ({
           ...participant,
@@ -344,6 +358,10 @@ router.get('/matches', async (req: Request, res: Response) => {
       include: {
         participants: {
           include: { agent: true },
+        },
+        rounds: {
+          where: { roundNumber: 1 },
+          select: { payload: true },
         },
       },
       orderBy: { createdAt: 'desc' },

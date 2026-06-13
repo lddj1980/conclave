@@ -89,6 +89,7 @@ interface Match {
   startedAt?: string;
   finishedAt?: string;
   participants: MatchParticipant[];
+  description?: string;
 }
 
 interface MatchDetails extends Match {
@@ -1859,6 +1860,11 @@ const parsed = JSON.parse(reg.result.content[0].text);`}</pre>
                         <p style={{ color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: '600' }}>
                           Game: {m.gameType.replace(/_/g, ' ').toUpperCase()}
                         </p>
+                        {m.description && (
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 'bold', margin: '0.2rem 0' }}>
+                            Fixture: {m.description}
+                          </p>
+                        )}
                         <p>
                           Rounds: {m.currentRound}/{m.totalRounds} • Created by: {m.createdBy}
                         </p>
