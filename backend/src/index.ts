@@ -206,7 +206,16 @@ async function main() {
             return;
           }
 
-          pending.res.status(200).json(out);
+          let status = 200;
+          if (out && typeof out === 'object') {
+            if (out.error) {
+              status = 400;
+            } else if (out.result && typeof out.result === 'object' && out.result.isError === true) {
+              status = 400;
+            }
+          }
+
+          pending.res.status(status).json(out);
           this._pending = null;
           pending.resolve();
           return;
