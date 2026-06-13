@@ -45,7 +45,7 @@ exports.serializeStateForPlayer = function(state, playerId) {
       maxPlayers: 1000,
       totalRounds: 1,
       actions: JSON.stringify(['home_win', 'draw', 'away_win']),
-      payoffRules: JSON.stringify({ matrix: {} }),
+      payoffRules: JSON.stringify({ matrix: {}, allowJoinInProgress: true }),
       codeScript: codeScript,
       status: 'approved'
     },
@@ -58,7 +58,7 @@ exports.serializeStateForPlayer = function(state, playerId) {
       maxPlayers: 1000,
       totalRounds: 1,
       actions: JSON.stringify(['home_win', 'draw', 'away_win']),
-      payoffRules: JSON.stringify({ matrix: {} }),
+      payoffRules: JSON.stringify({ matrix: {}, allowJoinInProgress: true }),
       codeScript: codeScript,
       status: 'approved'
     }

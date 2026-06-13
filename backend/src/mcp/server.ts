@@ -154,7 +154,7 @@ export function createMcpServer() {
 
     const specs = await prisma.gameSpecification.findMany({
       where: { key: { in: requested }, status: 'approved' },
-      select: { key: true },
+      select: { key: true, payoffRules: true },
     });
     const approved = new Set(specs.map((s) => s.key));
     const subscribed = requested.filter((k) => approved.has(k));
@@ -165,6 +165,59 @@ export function createMcpServer() {
         data: subscribed.map((gameKey) => ({ agentId, gameKey })),
         skipDuplicates: true,
       });
+
+      for (const gameKey of subscribed) {
+        const spec = specs.find((s) => s.key === gameKey);
+        if (spec && getAllowJoinInProgress(spec.payoffRules)) {
+          const matches = await prisma.match.findMany({
+            where: { gameType: gameKey, status: 'in_progress' },
+            include: {
+              rounds: {
+                where: { roundNumber: 1 },
+                select: { payload: true }
+              }
+            }
+          });
+
+          for (const m of matches) {
+            const roundOne = m.rounds[0];
+            let eligible = true;
+            if (roundOne && roundOne.payload) {
+              try {
+                const payloadObj = JSON.parse(roundOne.payload);
+                const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+                if (lockTimeStr) {
+                  const lockTime = new Date(lockTimeStr);
+                  if (new Date() >= lockTime) {
+                    eligible = false;
+                  }
+                }
+              } catch (e) {}
+            }
+
+            if (eligible) {
+              await prisma.matchParticipant.createMany({
+                data: [{
+                  matchId: m.id,
+                  agentId,
+                  role: 'competitor',
+                  status: 'joined',
+                }],
+                skipDuplicates: true,
+              });
+
+              await prisma.matchLog.create({
+                data: {
+                  matchId: m.id,
+                  eventType: 'agent_joined',
+                  message: `Agent joined via game subscription auto-enrollment`,
+                  payload: JSON.stringify({ agentId }),
+                }
+              });
+            }
+          }
+        }
+      }
     }
 
     return { requested, subscribed, unknown };
@@ -247,6 +300,12 @@ export function createMcpServer() {
     const uiPayload = (rules as any).uiPayload;
     if (!uiPayload || typeof uiPayload !== 'object') return null;
     return uiPayload as any;
+  };
+
+  const getAllowJoinInProgress = (payoffRulesRaw: any): boolean => {
+    const rules = parseJsonSafe(payoffRulesRaw);
+    if (!rules || typeof rules !== 'object') return false;
+    return (rules as any).allowJoinInProgress === true;
   };
 
   const randomWeights = (count: number) => {
@@ -1555,10 +1614,17 @@ export function createMcpServer() {
 
           const rawMatches = await prisma.match.findMany({
             where: {
-              status: 'waiting_for_players',
+              OR: [
+                { status: 'waiting_for_players' },
+                { status: 'in_progress' }
+              ],
               ...(allowedGameKeys ? { gameType: { in: allowedGameKeys } } : {}),
             },
             include: {
+              rounds: {
+                where: { roundNumber: 1 },
+                select: { payload: true }
+              },
               participants: {
                 include: {
                   agent: { include: { scoreboard: true, profile: true } },
@@ -1569,8 +1635,36 @@ export function createMcpServer() {
             take: Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Number(limit))) : 20,
           });
 
+          const gameSpecs = await prisma.gameSpecification.findMany({
+            where: { key: { in: [...new Set(rawMatches.map((m) => m.gameType))] } },
+          });
+          const specMap = new Map(gameSpecs.map((s) => [s.key, s]));
+
           const matches = rawMatches
-            .filter((m) => m.participants.length < m.maxPlayers)
+            .filter((m) => {
+              const spec = specMap.get(m.gameType);
+              const allowJoin = spec ? getAllowJoinInProgress(spec.payoffRules) : false;
+
+              if (m.status === 'in_progress') {
+                if (!allowJoin) return false;
+
+                const roundOne = m.rounds[0];
+                if (roundOne && roundOne.payload) {
+                  try {
+                    const payloadObj = JSON.parse(roundOne.payload);
+                    const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+                    if (lockTimeStr) {
+                      const lockTime = new Date(lockTimeStr);
+                      if (new Date() >= lockTime) {
+                        return false;
+                      }
+                    }
+                  } catch (e) {}
+                }
+              }
+
+              return m.participants.length < m.maxPlayers;
+            })
             .map((m) => ({
               matchId: m.id,
               gameType: m.gameType,
@@ -1608,10 +1702,17 @@ export function createMcpServer() {
           const allowedGameKeys = gameKey ? [String(gameKey)] : null;
           const rawMatches = await prisma.match.findMany({
             where: {
-              status: 'waiting_for_players',
+              OR: [
+                { status: 'waiting_for_players' },
+                { status: 'in_progress' }
+              ],
               ...(allowedGameKeys ? { gameType: { in: allowedGameKeys } } : {}),
             },
             include: {
+              rounds: {
+                where: { roundNumber: 1 },
+                select: { payload: true }
+              },
               participants: {
                 include: {
                   agent: { include: { scoreboard: true, profile: true } },
@@ -1622,8 +1723,36 @@ export function createMcpServer() {
             take: Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Number(limit))) : 20,
           });
 
+          const gameSpecs = await prisma.gameSpecification.findMany({
+            where: { key: { in: [...new Set(rawMatches.map((m) => m.gameType))] } },
+          });
+          const specMap = new Map(gameSpecs.map((s) => [s.key, s]));
+
           const matches = rawMatches
-            .filter((m) => m.participants.length < m.maxPlayers)
+            .filter((m) => {
+              const spec = specMap.get(m.gameType);
+              const allowJoin = spec ? getAllowJoinInProgress(spec.payoffRules) : false;
+
+              if (m.status === 'in_progress') {
+                if (!allowJoin) return false;
+
+                const roundOne = m.rounds[0];
+                if (roundOne && roundOne.payload) {
+                  try {
+                    const payloadObj = JSON.parse(roundOne.payload);
+                    const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+                    if (lockTimeStr) {
+                      const lockTime = new Date(lockTimeStr);
+                      if (new Date() >= lockTime) {
+                        return false;
+                      }
+                    }
+                  } catch (e) {}
+                }
+              }
+
+              return m.participants.length < m.maxPlayers;
+            })
             .map((m) => ({
               matchId: m.id,
               gameType: m.gameType,
@@ -2505,11 +2634,45 @@ export function createMcpServer() {
           const result = await prisma.$transaction(async (tx) => {
             const match = await tx.match.findUnique({
               where: { id: mId },
-              include: { participants: true },
+              include: {
+                participants: true,
+                rounds: {
+                  where: { roundNumber: 1 },
+                  select: { payload: true }
+                }
+              },
             });
 
             if (!match) throw new Error('Match not found');
-            if (match.status !== 'waiting_for_players') throw new Error('Match not accepting players');
+            const gameSpec = await tx.gameSpecification.findUnique({
+              where: { key: match.gameType }
+            });
+            const allowJoin = gameSpec ? getAllowJoinInProgress(gameSpec.payoffRules) : false;
+
+            if (match.status !== 'waiting_for_players') {
+              if (allowJoin && match.status === 'in_progress') {
+                const roundOne = match.rounds[0];
+                if (roundOne && roundOne.payload) {
+                  try {
+                    const payloadObj = JSON.parse(roundOne.payload);
+                    const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+                    if (lockTimeStr) {
+                      const lockTime = new Date(lockTimeStr);
+                      if (new Date() >= lockTime) {
+                        throw new Error(`Match not accepting players. Kickoff/lock time (${lockTime.toISOString()}) has passed.`);
+                      }
+                    }
+                  } catch (e: any) {
+                    if (e.message && e.message.includes('Kickoff/lock time')) {
+                      throw e;
+                    }
+                  }
+                }
+              } else {
+                throw new Error('Match not accepting players');
+              }
+            }
+
             if (match.participants.length >= match.maxPlayers) throw new Error('Match is full');
 
             const role = `player_${match.participants.length + 1}`;

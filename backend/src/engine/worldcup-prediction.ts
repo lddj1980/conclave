@@ -18,7 +18,7 @@ export interface WorldCupFixture {
 
 // US1: Subscribe Agent to prediction game
 export async function subscribeAgentToGame(agentId: string) {
-  return await prisma.agentGameSubscription.upsert({
+  const sub = await prisma.agentGameSubscription.upsert({
     where: {
       agentId_gameKey: {
         agentId,
@@ -31,6 +31,57 @@ export async function subscribeAgentToGame(agentId: string) {
       gameKey: 'world_cup_prediction',
     },
   });
+
+  // Auto-enroll in all future prediction matches
+  const matches = await prisma.match.findMany({
+    where: { gameType: 'world_cup_prediction', status: 'in_progress' },
+    include: {
+      rounds: {
+        where: { roundNumber: 1 },
+        select: { payload: true }
+      }
+    }
+  });
+
+  for (const m of matches) {
+    const roundOne = m.rounds[0];
+    let eligible = true;
+    if (roundOne && roundOne.payload) {
+      try {
+        const payloadObj = JSON.parse(roundOne.payload);
+        const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+        if (lockTimeStr) {
+          const lockTime = new Date(lockTimeStr);
+          if (new Date() >= lockTime) {
+            eligible = false;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (eligible) {
+      await prisma.matchParticipant.createMany({
+        data: [{
+          matchId: m.id,
+          agentId,
+          role: 'competitor',
+          status: 'joined',
+        }],
+        skipDuplicates: true,
+      });
+
+      await prisma.matchLog.create({
+        data: {
+          matchId: m.id,
+          eventType: 'agent_joined',
+          message: `Agent joined via game subscription auto-enrollment`,
+          payload: JSON.stringify({ agentId }),
+        }
+      });
+    }
+  }
+
+  return sub;
 }
 
 // US2: Fetch fixtures (mocked or via api-football.com)
