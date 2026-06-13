@@ -102,33 +102,15 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
 
     const fixtures: WorldCupFixture[] = [];
     for (const f of fixturesData) {
-      // Fetch odds for this fixture
-      const oddsRes = await fetch(
-        `https://v3.football.api-sports.io/odds?fixture=${f.fixture.id}`,
-        {
-          headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'v3.football.api-sports.io',
-          },
-        }
-      );
-      const oddsData = await oddsRes.json();
-      const bookmakers = oddsData.response?.[0]?.bookmakers || [];
-      const standardBookmaker = bookmakers[0]?.bets?.[0]?.values || [];
-
-      const homeOdds = parseFloat(standardBookmaker.find((v: any) => v.value === 'Home')?.odValue || '2.0');
-      const drawOdds = parseFloat(standardBookmaker.find((v: any) => v.value === 'Draw')?.odValue || '3.0');
-      const awayOdds = parseFloat(standardBookmaker.find((v: any) => v.value === 'Away')?.odValue || '2.0');
-
       fixtures.push({
         fixtureId: f.fixture.id,
         homeTeam: f.teams.home.name,
         awayTeam: f.teams.away.name,
         kickoffTime: new Date(f.fixture.date),
         status: f.fixture.status.short,
-        homeOdds: isNaN(homeOdds) ? 2.0 : homeOdds,
-        drawOdds: isNaN(drawOdds) ? 3.0 : drawOdds,
-        awayOdds: isNaN(awayOdds) ? 2.0 : awayOdds,
+        homeOdds: 2.0,
+        drawOdds: 3.0,
+        awayOdds: 2.0,
         score: f.fixture.status.short === 'FT' ? {
           home: f.goals.home,
           away: f.goals.away,
@@ -164,6 +146,39 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
     });
 
     if (!match) {
+      let homeOdds = f.homeOdds;
+      let drawOdds = f.drawOdds;
+      let awayOdds = f.awayOdds;
+
+      // Fetch actual odds only when creating the match
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (apiKey && f.fixtureId >= 1000) {
+        try {
+          const oddsRes = await fetch(
+            `https://v3.football.api-sports.io/odds?fixture=${f.fixtureId}`,
+            {
+              headers: {
+                'x-rapidapi-key': apiKey,
+                'x-rapidapi-host': 'v3.football.api-sports.io',
+              },
+            }
+          );
+          const oddsData = await oddsRes.json();
+          const bookmakers = oddsData.response?.[0]?.bookmakers || [];
+          const standardBookmaker = bookmakers[0]?.bets?.[0]?.values || [];
+
+          const homeVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Home')?.odValue || '2.0');
+          const drawVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Draw')?.odValue || '3.0');
+          const awayVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Away')?.odValue || '2.0');
+
+          if (!isNaN(homeVal)) homeOdds = homeVal;
+          if (!isNaN(drawVal)) drawOdds = drawVal;
+          if (!isNaN(awayVal)) awayOdds = awayVal;
+        } catch (e) {
+          console.error(`Failed to fetch odds for fixture ${f.fixtureId}:`, e);
+        }
+      }
+
       match = await prisma.match.create({
         data: {
           gameType: 'world_cup_prediction',
@@ -183,9 +198,9 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
         awayTeam: f.awayTeam,
         kickoffTime: f.kickoffTime.toISOString(),
         odds: {
-          home: f.homeOdds,
-          draw: f.drawOdds,
-          away: f.awayOdds,
+          home: homeOdds,
+          draw: drawOdds,
+          away: awayOdds,
         },
       };
 
@@ -214,7 +229,7 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
         data: {
           matchId: match.id,
           eventType: 'match_started',
-          message: `Prediction Match created for ${f.homeTeam} vs ${f.awayTeam}. Odds: H:${f.homeOdds} D:${f.drawOdds} A:${f.awayOdds}`,
+          message: `Prediction Match created for ${f.homeTeam} vs ${f.awayTeam}. Odds: H:${homeOdds} D:${drawOdds} A:${awayOdds}`,
           payload: JSON.stringify(roundPayload),
         },
       });
@@ -472,7 +487,7 @@ export function runWorldCupPredictionLoop() {
     }
   })();
 
-  // Set interval to run every 10 minutes
+  // Set interval to run every 20 minutes
   setInterval(async () => {
     try {
       const fixtures = await fetchDailyFixturesAndOdds();
@@ -484,6 +499,6 @@ export function runWorldCupPredictionLoop() {
     } catch (err: any) {
       console.error('[WorldCup] Error in prediction loop:', err.message);
     }
-  }, 10 * 60 * 1000);
+  }, 20 * 60 * 1000);
 }
 
