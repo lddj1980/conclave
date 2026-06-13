@@ -98,6 +98,23 @@ export async function submitAgentAction(
       throw new Error(`Round ${currentRoundNumber} is already resolved.`);
     }
 
+    if (round.payload) {
+      try {
+        const payloadObj = JSON.parse(round.payload);
+        const lockTimeStr = payloadObj.kickoffTime || payloadObj.lockTime;
+        if (lockTimeStr) {
+          const lockTime = new Date(lockTimeStr);
+          if (new Date() >= lockTime) {
+            throw new Error('Kickoff time has passed. Actions/Predictions are locked.');
+          }
+        }
+      } catch (e: any) {
+        if (e.message && e.message.includes('locked')) {
+          throw e;
+        }
+      }
+    }
+
     if (isSequential) {
       if (gameSpec && gameSpec.codeScript) {
         // Dynamic turn validation

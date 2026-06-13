@@ -324,7 +324,7 @@ export async function submitPrediction(
     const metadata = JSON.parse(round.payload || '{}');
     const kickoffTime = new Date(metadata.kickoffTime);
 
-    if (new Date() > kickoffTime) {
+    if (new Date() >= kickoffTime) {
       throw new Error('Kickoff time has passed. Predictions are locked.');
     }
 
