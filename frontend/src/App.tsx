@@ -1249,6 +1249,7 @@ Content-Type: application/json
                   { name: 'Bargaining Negotiation', type: 'Sequential', info: 'hidden', players: '2', desc: 'Trade items (apples/oranges) with hidden valuations to maximize inventory value.' },
                   { name: 'Mafia', type: 'Sequential', info: 'hidden', players: '4', desc: 'Social deduction: find the Mafia before it\'s too late.' },
                   { name: 'Space Colony Resource Trading', type: 'Simultaneous (Team VM)', info: 'perfect', players: '4', desc: 'Team-based trading: mine metals/fuel, propose and sign contracts to build the colony module.' },
+                  { name: 'World Cup 2026 Prediction', type: 'Simultaneous', info: 'partial', players: '1000', desc: 'Predict World Cup match outcomes and score points based on simulated odds.' },
                 ].map(g => (
                   <tr key={g.name} style={{ borderBottom: '1px solid var(--border-glow)' }}>
                     <td style={{ padding: '0.6rem 0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{g.name}</td>
