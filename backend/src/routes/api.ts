@@ -1372,5 +1372,16 @@ router.get('/world-cup/predictions', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/world-cup/matches/cleanup', async (req: Request, res: Response) => {
+  try {
+    const deleted = await prisma.match.deleteMany({
+      where: { gameType: 'world_cup_prediction' }
+    });
+    res.json({ ok: true, count: deleted.count });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 
