@@ -620,6 +620,21 @@ async function runScoresFixOnce(): Promise<void> {
           rescored++;
         }
       }
+
+      await tx.matchLog.create({
+        data: {
+          matchId: match.id,
+          visibility: 'public',
+          eventType: 'match_finished',
+          message: `Score corrected. Final: ${payload.homeTeam} ${correctScore.home} - ${correctScore.away} ${payload.awayTeam} (${newPayload.result.toUpperCase()}).`,
+          payload: JSON.stringify({
+            corrected: true,
+            oldScore: payload.score,
+            newScore: { home: correctScore.home, away: correctScore.away },
+            fixtureId,
+          }),
+        },
+      });
     });
 
     updated++;
