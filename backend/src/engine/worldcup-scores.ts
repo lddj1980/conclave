@@ -1,11 +1,21 @@
 import { ScheduledFixture, deterministicScore } from '../data/worldcup-2026-schedule.js';
 
-interface FreeApiMatch {
-  home_team: { name: string };
-  away_team: { name: string };
-  home_goals?: number;
-  away_goals?: number;
-  status: string;
+interface WorldCup26Match {
+  id: string;
+  home_team_id: string;
+  away_team_id: string;
+  home_score: string;
+  away_score: string;
+  home_scorers: string;
+  away_scorers: string;
+  group: string;
+  matchday: string;
+  local_date: string;
+  finished: string;
+  time_elapsed: string;
+  type: string;
+  home_team_name_en: string;
+  away_team_name_en: string;
 }
 
 export async function fetchScoresForFixtures(
@@ -14,25 +24,26 @@ export async function fetchScoresForFixtures(
   const result = new Map<number, { home: number; away: number }>();
 
   try {
-    const res = await fetch('https://worldcupjson.net/matches', {
-      signal: AbortSignal.timeout(8000),
+    const res = await fetch('https://worldcup26.ir/get/games', {
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data: FreeApiMatch[] = await res.json();
+    const data: { games: WorldCup26Match[] } = await res.json();
 
     for (const f of fixtures) {
-      const match = data.find(
-        m => m.home_team.name === f.homeTeam && m.away_team.name === f.awayTeam
-      );
-      if (match && match.home_goals !== undefined && match.away_goals !== undefined) {
-        result.set(f.id, { home: match.home_goals, away: match.away_goals });
+      const match = data.games.find(m => parseInt(m.id) === f.id);
+      if (match && match.finished === 'TRUE') {
+        const homeScore = parseInt(match.home_score);
+        const awayScore = parseInt(match.away_score);
+        if (!isNaN(homeScore) && !isNaN(awayScore)) {
+          result.set(f.id, { home: homeScore, away: awayScore });
+        }
       }
     }
   } catch (err) {
-    console.warn('[WorldCup] Free score API failed, using deterministic fallback:', (err as Error)?.message);
+    console.warn('[WorldCup] worldcup26.ir API failed, using deterministic fallback:', (err as Error)?.message);
   }
 
-  // Fill missing with deterministic fallback
   for (const f of fixtures) {
     if (!result.has(f.id)) {
       result.set(f.id, deterministicScore(f.id));

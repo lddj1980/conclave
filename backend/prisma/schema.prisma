@@ -281,3 +281,11 @@ model ProposalAuditLog {
 
   @@index([proposalId, createdAt])
 }
+
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
