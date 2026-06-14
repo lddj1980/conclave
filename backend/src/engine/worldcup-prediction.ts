@@ -542,13 +542,18 @@ async function cleanupStaleMatches(): Promise<number> {
 
 async function runScoresFixOnce(): Promise<void> {
   const existing = await prisma.appSetting.findUnique({ where: { key: SCORES_FIX_KEY } });
-  if (existing) return;
+  if (existing) {
+    console.log('[WorldCup] Scores fix already run (AppSetting exists), skipping.');
+    return;
+  }
 
   console.log('[WorldCup] Running one-time scores fix for past matches...');
   const schedule = getWorldCupSchedule();
   const now = new Date();
   const pastFixtures = schedule.filter(f => new Date(f.kickoff) <= now);
+  console.log(`[WorldCup] Found ${pastFixtures.length} past fixtures in schedule`);
   const scores = await fetchScoresForFixtures(pastFixtures);
+  console.log(`[WorldCup] Fetched ${scores.size} scores from API`);
 
   const dbMatches = await prisma.match.findMany({
     where: { gameType: 'world_cup_prediction', status: 'finished' },
@@ -558,8 +563,14 @@ async function runScoresFixOnce(): Promise<void> {
     },
   });
 
+  console.log(`[WorldCup] Found ${dbMatches.length} finished matches in DB`);
+
   let updated = 0;
   let rescored = 0;
+  let skippedNoFixtureId = 0;
+  let skippedNoScore = 0;
+  let skippedAlreadyCorrect = 0;
+  let skippedNoPrediction = 0;
 
   for (const match of dbMatches) {
     const round = match.rounds[0];
@@ -569,19 +580,19 @@ async function runScoresFixOnce(): Promise<void> {
     try { payload = JSON.parse(round.payload); } catch { continue; }
 
     const fixtureId = payload.fixtureId;
-    if (!fixtureId) continue;
+    if (!fixtureId) { skippedNoFixtureId++; continue; }
 
     const correctScore = scores.get(fixtureId);
-    if (!correctScore) continue;
+    if (!correctScore) { skippedNoScore++; continue; }
 
     const homeAction = round.actions.find((a: any) => a.actionType === 'predict_home');
     const awayAction = round.actions.find((a: any) => a.actionType === 'predict_away');
     const predHome = homeAction?.payload as number | undefined;
     const predAway = awayAction?.payload as number | undefined;
-    if (predHome === undefined || predAway === undefined) continue;
+    if (predHome === undefined || predAway === undefined) { skippedNoPrediction++; continue; }
 
     const wasCorrect = predHome === correctScore.home && predAway === correctScore.away;
-    if (wasCorrect) continue;
+    if (wasCorrect) { skippedAlreadyCorrect++; continue; }
 
     const newPayload = {
       ...payload,
@@ -638,10 +649,12 @@ async function runScoresFixOnce(): Promise<void> {
     });
 
     updated++;
+    console.log(`[WorldCup] Fixed match ${match.matchSeed}: ${payload.homeTeam} ${correctScore.home}-${correctScore.away} ${payload.awayTeam} (fixture ${fixtureId})`);
   }
 
   await prisma.appSetting.create({ data: { key: SCORES_FIX_KEY, value: 'done' } });
   console.log(`[WorldCup] Scores fix done. Updated ${updated} matches, rescored ${rescored} predictions.`);
+  console.log(`[WorldCup] Skipped: noFixtureId=${skippedNoFixtureId} noScore=${skippedNoScore} alreadyCorrect=${skippedAlreadyCorrect} noPrediction=${skippedNoPrediction}`);
 }
 
 // Background sync and settlement loop
