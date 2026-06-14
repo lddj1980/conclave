@@ -17,7 +17,9 @@ async function main() {
   if (mode === 'sync' || mode === 'settle' || mode === 'settle-matches') {
     console.log('[HouseBot Runner] Settling completed matches...');
     // For test simulation, let's force set the status of mocked matches to Finished (FT) with a score
-    const simulatedFixtures = fixtures.map(f => ({
+    // Only settle fixtures whose kickoff has already passed to avoid finalizing active matches
+    const eligibleFixtures = fixtures.filter(f => new Date() >= f.kickoffTime);
+    const simulatedFixtures = eligibleFixtures.map(f => ({
       ...f,
       status: 'FT' as const,
       score: { home: 2, away: 1 } // Simulating 2-1 result

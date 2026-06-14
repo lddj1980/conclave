@@ -502,6 +502,7 @@ export async function settlePredictionMatches(fixtures: WorldCupFixture[]) {
 
   for (const f of fixtures) {
     if (f.status !== 'FT' && !f.score) continue;
+    if (new Date() < f.kickoffTime) continue; // don't settle matches that haven't kicked off yet
 
     const matchSeed = `worldcup-fixture-${f.fixtureId}`;
     const match = await prisma.match.findFirst({
