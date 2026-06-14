@@ -18,6 +18,17 @@ interface WorldCup26Match {
   away_team_name_en: string;
 }
 
+const TEAM_ALIASES: Record<string, string[]> = {
+  'Korea Republic': ['South Korea', 'Korea Republic', 'Korea'],
+  'South Korea': ['South Korea', 'Korea Republic', 'Korea'],
+  Czechia: ['Czechia', 'Czech Republic'],
+  'Czech Republic': ['Czechia', 'Czech Republic'],
+  Turkiye: ['Turkiye', 'Turkey'],
+  Turkey: ['Turkiye', 'Turkey'],
+  'DR Congo': ['DR Congo', 'Democratic Republic of the Congo'],
+  'Democratic Republic of the Congo': ['DR Congo', 'Democratic Republic of the Congo'],
+};
+
 function normalizeTeam(name: string | null | undefined): string {
   if (!name) return '';
   return String(name)
@@ -28,8 +39,15 @@ function normalizeTeam(name: string | null | undefined): string {
     .trim();
 }
 
+function teamNamesMatch(a: string, b: string): boolean {
+  if (normalizeTeam(a) === normalizeTeam(b)) return true;
+  const aliasesA = TEAM_ALIASES[a] ?? [a];
+  const aliasesB = TEAM_ALIASES[b] ?? [b];
+  return aliasesA.some(na => aliasesB.some(nb => normalizeTeam(na) === normalizeTeam(nb)));
+}
+
 function teamMatch(apiName: string, localName: string): boolean {
-  return normalizeTeam(apiName) === normalizeTeam(localName);
+  return teamNamesMatch(String(apiName ?? ''), localName);
 }
 
 export async function fetchScoresForFixtures(
