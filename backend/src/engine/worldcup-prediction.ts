@@ -500,31 +500,38 @@ export async function submitPrediction(
 export async function settlePredictionMatches(fixtures: WorldCupFixture[]) {
   const settledCount = { matches: 0, predictions: 0 };
 
+  // Pre-fetch all in_progress worldcup matches for fallback matching
+  const allInProgressMatches = await prisma.match.findMany({
+    where: { gameType: 'world_cup_prediction', status: 'in_progress' },
+    include: {
+      participants: { include: { agent: true } },
+      rounds: { where: { roundNumber: 1 }, include: { actions: true } },
+    },
+  });
+
   for (const f of fixtures) {
     if (f.status !== 'FT' && !f.score) continue;
-    if (new Date() < f.kickoffTime) continue; // don't settle matches that haven't kicked off yet
+    if (new Date() < f.kickoffTime) continue;
 
     const matchSeed = `worldcup-fixture-${f.fixtureId}`;
-    const match = await prisma.match.findFirst({
-      where: {
-        gameType: 'world_cup_prediction',
-        matchSeed: matchSeed,
-        status: 'in_progress',
-      },
-      include: {
-        participants: {
-          include: { agent: true },
-        },
-      },
-    });
+
+    // Try direct match by fixture ID first, then fallback to team name matching
+    let match = allInProgressMatches.find(m => m.matchSeed === matchSeed);
+
+    if (!match) {
+      match = allInProgressMatches.find(m => {
+        const payload = m.rounds[0]?.payload;
+        if (!payload) return false;
+        try {
+          const data = JSON.parse(payload);
+          return data.homeTeam === f.homeTeam && data.awayTeam === f.awayTeam;
+        } catch { return false; }
+      });
+    }
 
     if (!match) continue;
 
-    const round = await prisma.round.findFirst({
-      where: { matchId: match.id, roundNumber: 1 },
-      include: { actions: true },
-    });
-
+    const round = match.rounds[0];
     if (!round) continue;
 
     // Determine actual outcome
@@ -651,6 +658,65 @@ export async function settlePredictionMatches(fixtures: WorldCupFixture[]) {
   return settledCount;
 }
 
+// Auto-settle any in_progress matches whose kickoff has already passed
+// but were not settled by settlePredictionMatches (e.g., orphaned matches
+// whose fixture ID doesn't match any fixture from current API/mock data)
+async function autoSettleOrphanMatches(): Promise<number> {
+  const stuckMatches = await prisma.match.findMany({
+    where: { gameType: 'world_cup_prediction', status: 'in_progress' },
+    include: {
+      participants: { include: { agent: true } },
+      rounds: { where: { roundNumber: 1 }, include: { actions: true } },
+    },
+  });
+
+  let settled = 0;
+  for (const match of stuckMatches) {
+    const round = match.rounds[0];
+    if (!round) continue;
+
+    let payload: any;
+    try { payload = JSON.parse(round.payload || '{}'); } catch { continue; }
+
+    const kickoffTime = new Date(payload.kickoffTime);
+    if (new Date() < kickoffTime) continue;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.round.update({
+        where: { id: round.id },
+        data: { status: 'finished', finishedAt: new Date() },
+      });
+
+      for (const p of match.participants) {
+        await tx.matchParticipant.update({
+          where: { id: p.id },
+          data: { score: 0 },
+        });
+        await tx.agent.update({
+          where: { id: p.agentId },
+          data: { status: 'idle' },
+        });
+      }
+
+      await tx.match.update({
+        where: { id: match.id },
+        data: { status: 'finished', finishedAt: new Date() },
+      });
+
+      await tx.matchLog.create({
+        data: {
+          matchId: match.id,
+          eventType: 'match_finished',
+          message: `Match auto-settled. Result unavailable. Fixture: ${payload.homeTeam || '?'} vs ${payload.awayTeam || '?'}`,
+        },
+      });
+    });
+    settled++;
+  }
+
+  return settled;
+}
+
 // Background sync and settlement loop
 export function runWorldCupPredictionLoop() {
   console.log('[WorldCup] Starting prediction sync loop...');
@@ -663,6 +729,10 @@ export function runWorldCupPredictionLoop() {
       const result = await settlePredictionMatches(fixtures);
       if (result.matches > 0) {
         console.log(`[WorldCup] Initial sync: settled ${result.matches} matches and ${result.predictions} predictions.`);
+      }
+      const orphaned = await autoSettleOrphanMatches();
+      if (orphaned > 0) {
+        console.log(`[WorldCup] Auto-settled ${orphaned} orphan matches with past kickoff.`);
       }
     } catch (err: any) {
       console.error('[WorldCup] Error in initial prediction sync:', err.message);
@@ -677,6 +747,10 @@ export function runWorldCupPredictionLoop() {
       const result = await settlePredictionMatches(fixtures);
       if (result.matches > 0) {
         console.log(`[WorldCup] Loop: settled ${result.matches} matches and ${result.predictions} predictions.`);
+      }
+      const orphaned = await autoSettleOrphanMatches();
+      if (orphaned > 0) {
+        console.log(`[WorldCup] Loop: auto-settled ${orphaned} orphan matches.`);
       }
     } catch (err: any) {
       console.error('[WorldCup] Error in prediction loop:', err.message);
