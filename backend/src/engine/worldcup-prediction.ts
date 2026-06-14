@@ -87,7 +87,7 @@ export async function subscribeAgentToGame(agentId: string) {
 // US2: Fetch fixtures (mocked or via api-football.com)
 // US2: Fetch fixtures (mocked or via api-football.com)
 // US2: Fetch fixtures (mocked or via api-football.com)
-export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
+function getMockFixtures(): WorldCupFixture[] {
   const legacyFixtures: WorldCupFixture[] = [
     {
       fixtureId: 1001,
@@ -135,61 +135,64 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
     }
   ];
 
+  const fixtures: WorldCupFixture[] = [];
+  const now = new Date();
+
+  // Helper to generate mock fixtures for a given date
+  const getMockFixturesForDate = (date: Date) => {
+    const dateStr = date.toISOString().split('T')[0].replace(/-/g, ''); // e.g., "20260614"
+    const dateVal = parseInt(dateStr, 10);
+    
+    const baseTime = new Date(date);
+    baseTime.setUTCHours(18, 0, 0, 0);
+
+    const fixturesInfo = [
+      { index: 1, home: 'Qatar', away: 'Switzerland', offsetHours: 0, homeOdds: 3.50, drawOdds: 3.20, awayOdds: 2.10 },
+      { index: 2, home: 'Brazil', away: 'Morocco', offsetHours: 3, homeOdds: 1.40, drawOdds: 4.50, awayOdds: 7.50 },
+      { index: 3, home: 'Haiti', away: 'Scotland', offsetHours: 6, homeOdds: 5.50, drawOdds: 3.80, awayOdds: 1.60 },
+      { index: 4, home: 'Australia', away: 'Türkiye', offsetHours: 9, homeOdds: 2.80, drawOdds: 3.10, awayOdds: 2.50 }
+    ];
+
+    return fixturesInfo.map(f => {
+      const fixtureId = dateVal * 10 + f.index;
+      const kickoffTime = new Date(baseTime.getTime() + f.offsetHours * 60 * 60 * 1000);
+      
+      // Settle if now is past kickoff + 2 hours
+      const isFinished = now.getTime() >= kickoffTime.getTime() + 2 * 60 * 60 * 1000;
+      
+      return {
+        fixtureId,
+        homeTeam: f.home,
+        awayTeam: f.away,
+        kickoffTime,
+        status: isFinished ? ('FT' as const) : ('NS' as const),
+        homeOdds: f.homeOdds,
+        drawOdds: f.drawOdds,
+        awayOdds: f.awayOdds,
+        score: isFinished ? {
+          home: (fixtureId % 3),
+          away: (fixtureId % 2)
+        } : undefined
+      };
+    });
+  };
+
+  // Generate mock fixtures for yesterday and today
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const today = new Date();
+
+  fixtures.push(...getMockFixturesForDate(yesterday));
+  fixtures.push(...getMockFixturesForDate(today));
+  fixtures.push(...legacyFixtures);
+
+  return fixtures;
+}
+
+// US2: Fetch fixtures (mocked or via api-football.com)
+export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) {
-    const fixtures: WorldCupFixture[] = [];
-    const now = new Date();
-
-    // Helper to generate mock fixtures for a given date
-    const getMockFixturesForDate = (date: Date) => {
-      const dateStr = date.toISOString().split('T')[0].replace(/-/g, ''); // e.g., "20260614"
-      const dateVal = parseInt(dateStr, 10);
-      
-      const baseTime = new Date(date);
-      baseTime.setUTCHours(18, 0, 0, 0);
-
-      const fixturesInfo = [
-        { index: 1, home: 'Qatar', away: 'Switzerland', offsetHours: 0, homeOdds: 3.50, drawOdds: 3.20, awayOdds: 2.10 },
-        { index: 2, home: 'Brazil', away: 'Morocco', offsetHours: 3, homeOdds: 1.40, drawOdds: 4.50, awayOdds: 7.50 },
-        { index: 3, home: 'Haiti', away: 'Scotland', offsetHours: 6, homeOdds: 5.50, drawOdds: 3.80, awayOdds: 1.60 },
-        { index: 4, home: 'Australia', away: 'Türkiye', offsetHours: 9, homeOdds: 2.80, drawOdds: 3.10, awayOdds: 2.50 }
-      ];
-
-      return fixturesInfo.map(f => {
-        const fixtureId = dateVal * 10 + f.index;
-        const kickoffTime = new Date(baseTime.getTime() + f.offsetHours * 60 * 60 * 1000);
-        
-        // Settle if now is past kickoff + 2 hours
-        const isFinished = now.getTime() >= kickoffTime.getTime() + 2 * 60 * 60 * 1000;
-        
-        return {
-          fixtureId,
-          homeTeam: f.home,
-          awayTeam: f.away,
-          kickoffTime,
-          status: isFinished ? ('FT' as const) : ('NS' as const),
-          homeOdds: f.homeOdds,
-          drawOdds: f.drawOdds,
-          awayOdds: f.awayOdds,
-          score: isFinished ? {
-            home: (fixtureId % 3),
-            away: (fixtureId % 2)
-          } : undefined
-        };
-      });
-    };
-
-    // Generate mock fixtures for yesterday and today
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const today = new Date();
-
-    fixtures.push(...getMockFixturesForDate(yesterday));
-    fixtures.push(...getMockFixturesForDate(today));
-
-    // Append legacy fixtures to ensure old matches can be settled
-    fixtures.push(...legacyFixtures);
-
-    return fixtures;
+    return getMockFixtures();
   }
 
   // Real integration with api-football.com for yesterday and today
@@ -234,13 +237,60 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
     }
 
     const fixtures = Array.from(fixturesMap.values());
+    
     // Append legacy fixtures so they get settled even if running in real mode in production
+    const legacyFixtures: WorldCupFixture[] = [
+      {
+        fixtureId: 1001,
+        homeTeam: 'Qatar',
+        awayTeam: 'Switzerland',
+        kickoffTime: new Date('2026-06-13T18:00:00.000Z'),
+        status: 'FT' as const,
+        homeOdds: 3.50,
+        drawOdds: 3.20,
+        awayOdds: 2.10,
+        score: { home: 1, away: 2 }
+      },
+      {
+        fixtureId: 1002,
+        homeTeam: 'Brazil',
+        awayTeam: 'Morocco',
+        kickoffTime: new Date('2026-06-13T21:00:00.000Z'),
+        status: 'FT' as const,
+        homeOdds: 1.40,
+        drawOdds: 4.50,
+        awayOdds: 7.50,
+        score: { home: 2, away: 0 }
+      },
+      {
+        fixtureId: 1003,
+        homeTeam: 'Haiti',
+        awayTeam: 'Scotland',
+        kickoffTime: new Date('2026-06-14T00:00:00.000Z'),
+        status: 'FT' as const,
+        homeOdds: 5.50,
+        drawOdds: 3.80,
+        awayOdds: 1.60,
+        score: { home: 1, away: 1 }
+      },
+      {
+        fixtureId: 1004,
+        homeTeam: 'Australia',
+        awayTeam: 'Türkiye',
+        kickoffTime: new Date('2026-06-14T03:00:00.000Z'),
+        status: 'FT' as const,
+        homeOdds: 2.80,
+        drawOdds: 3.10,
+        awayOdds: 2.50,
+        score: { home: 0, away: 2 }
+      }
+    ];
     fixtures.push(...legacyFixtures);
 
     return fixtures;
   } catch (error) {
     console.error('Failed to fetch from API-Football, falling back to mocks:', error);
-    return fetchDailyFixturesAndOdds(); // fallback
+    return getMockFixtures(); // fallback to static mock function directly (no infinite loop)
   }
 }
 
