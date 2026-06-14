@@ -512,6 +512,32 @@ async function autoSettleOrphanMatches(): Promise<number> {
   return settled;
 }
 
+// Delete matches whose teams don't match any fixture in the current schedule.
+// This cleans up stale data when the schedule is updated.
+async function cleanupStaleMatches(): Promise<number> {
+  const schedule = getWorldCupSchedule();
+  const validPairs = new Set(schedule.map(f => `${f.homeTeam}|${f.awayTeam}`));
+
+  const stale = await prisma.match.findMany({
+    where: { gameType: 'world_cup_prediction' },
+    include: { rounds: { where: { roundNumber: 1 }, select: { payload: true } } },
+  });
+
+  let deleted = 0;
+  for (const m of stale) {
+    const payload = m.rounds[0]?.payload;
+    if (!payload) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(payload); } catch { continue; }
+    const key = `${parsed.homeTeam}|${parsed.awayTeam}`;
+    if (!validPairs.has(key)) {
+      await prisma.match.delete({ where: { id: m.id } });
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
 // Background sync and settlement loop
 export function runWorldCupPredictionLoop() {
   console.log('[WorldCup] Starting prediction sync loop...');
@@ -519,6 +545,10 @@ export function runWorldCupPredictionLoop() {
   // Run once immediately on start
   void (async () => {
     try {
+      const cleaned = await cleanupStaleMatches();
+      if (cleaned > 0) {
+        console.log(`[WorldCup] Cleaned ${cleaned} stale matches from outdated schedule.`);
+      }
       const fixtures = await fetchDailyFixturesAndOdds();
       await createDailyMatches(fixtures);
       const result = await settlePredictionMatches(fixtures);
