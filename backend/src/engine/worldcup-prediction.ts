@@ -542,107 +542,68 @@ async function cleanupStaleMatches(): Promise<number> {
 
 async function runScoresFixOnce(): Promise<void> {
   const existing = await prisma.appSetting.findUnique({ where: { key: SCORES_FIX_KEY } });
-  if (existing) {
-    // Check if any matches still have incorrect scores
-    const schedule = getWorldCupSchedule();
-    const now = new Date();
-    const pastFixtures = schedule.filter(f => new Date(f.kickoff) <= now);
-    const scores = await fetchScoresForFixtures(pastFixtures);
 
-    const dbMatches = await prisma.match.findMany({
-      where: { gameType: 'world_cup_prediction', status: 'finished' },
-      include: {
-        rounds: { where: { roundNumber: 1 }, include: { actions: true } },
-        participants: { include: { agent: { include: { scoreboard: true } } } },
-      },
-    });
-
-    let needsFix = false;
-    for (const match of dbMatches) {
-      const round = match.rounds[0];
-      if (!round || !round.payload) continue;
-
-      let payload: any;
-      try { payload = JSON.parse(round.payload); } catch { continue; }
-
-      const fixtureId = payload.fixtureId;
-      if (!fixtureId) continue;
-
-      const correctScore = scores.get(fixtureId);
-      if (!correctScore) continue;
-
-      const homeAction = round.actions.find((a: any) => a.actionType === 'predict_home');
-      const awayAction = round.actions.find((a: any) => a.actionType === 'predict_away');
-      const predHome = homeAction?.payload as number | undefined;
-      const predAway = awayAction?.payload as number | undefined;
-      if (predHome === undefined || predAway === undefined) continue;
-
-      const wasCorrect = predHome === correctScore.home && predAway === correctScore.away;
-      if (!wasCorrect) {
-        needsFix = true;
-        break;
-      }
-    }
-
-    if (!needsFix) {
-      console.log('[WorldCup] Scores fix already run and all matches have correct scores, skipping.');
-      return;
-    }
-
-    console.log('[WorldCup] Found incorrect scores from previous fix run, re-running fix...');
-  }
-
-  console.log('[WorldCup] Running one-time scores fix for past matches...');
   const schedule = getWorldCupSchedule();
   const now = new Date();
   const pastFixtures = schedule.filter(f => new Date(f.kickoff) <= now);
-  console.log(`[WorldCup] Found ${pastFixtures.length} past fixtures in schedule`);
   const scores = await fetchScoresForFixtures(pastFixtures);
-  console.log(`[WorldCup] Fetched ${scores.size} scores from API`);
 
   const dbMatches = await prisma.match.findMany({
-    where: { gameType: 'world_cup_prediction', status: 'finished' },
+    where: { gameType: 'world_cup_prediction' },
     include: {
       rounds: { where: { roundNumber: 1 }, include: { actions: true } },
-      participants: { include: { agent: { include: { scoreboard: true } } } },
+      participants: true,
     },
   });
 
-  console.log(`[WorldCup] Found ${dbMatches.length} finished matches in DB`);
+  let needsFix = false;
+  for (const match of dbMatches) {
+    const round = match.rounds[0];
+    if (!round?.payload) continue;
+    let payload: any;
+    try { payload = JSON.parse(round.payload); } catch { continue; }
+    if (!payload.fixtureId) continue;
+    const correctScore = scores.get(payload.fixtureId);
+    if (!correctScore) continue;
+    if (payload.score?.home === correctScore.home && payload.score?.away === correctScore.away) continue;
+    needsFix = true;
+    break;
+  }
+
+  if (existing && !needsFix) {
+    console.log('[WorldCup] Scores fix already applied, all scores correct. Skipping.');
+    return;
+  }
+
+  if (!needsFix) {
+    console.log('[WorldCup] No matches need score correction. Skipping.');
+    return;
+  }
+
+  console.log('[WorldCup] Running scores fix...');
 
   let updated = 0;
   let rescored = 0;
-  let skippedNoFixtureId = 0;
-  let skippedNoScore = 0;
-  let skippedAlreadyCorrect = 0;
-  let skippedNoPrediction = 0;
+  let skipped = 0;
 
   for (const match of dbMatches) {
     const round = match.rounds[0];
-    if (!round || !round.payload) continue;
-
+    if (!round?.payload) { skipped++; continue; }
     let payload: any;
-    try { payload = JSON.parse(round.payload); } catch { continue; }
+    try { payload = JSON.parse(round.payload); } catch { skipped++; continue; }
+    if (!payload.fixtureId) { skipped++; continue; }
+    const correctScore = scores.get(payload.fixtureId);
+    if (!correctScore) { skipped++; continue; }
+    if (payload.score?.home === correctScore.home && payload.score?.away === correctScore.away) { skipped++; continue; }
 
-    const fixtureId = payload.fixtureId;
-    if (!fixtureId) { skippedNoFixtureId++; continue; }
-
-    const correctScore = scores.get(fixtureId);
-    if (!correctScore) { skippedNoScore++; continue; }
-
-    const homeAction = round.actions.find((a: any) => a.actionType === 'predict_home');
-    const awayAction = round.actions.find((a: any) => a.actionType === 'predict_away');
-    const predHome = homeAction?.payload as number | undefined;
-    const predAway = awayAction?.payload as number | undefined;
-    if (predHome === undefined || predAway === undefined) { skippedNoPrediction++; continue; }
-
-    const wasCorrect = predHome === correctScore.home && predAway === correctScore.away;
-    if (wasCorrect) { skippedAlreadyCorrect++; continue; }
+    const correctOutcome: 'home_win' | 'draw' | 'away_win' =
+      correctScore.home > correctScore.away ? 'home_win' :
+      correctScore.home < correctScore.away ? 'away_win' : 'draw';
 
     const newPayload = {
       ...payload,
       score: { home: correctScore.home, away: correctScore.away },
-      result: correctScore.home > correctScore.away ? 'home' : correctScore.home < correctScore.away ? 'away' : 'draw',
+      result: correctOutcome,
     };
 
     await prisma.$transaction(async (tx) => {
@@ -652,27 +613,29 @@ async function runScoresFixOnce(): Promise<void> {
       });
 
       for (const p of match.participants) {
-        const participantHomeAction = round.actions.find((a: any) => a.actionType === 'predict_home' && a.agentId === p.agentId);
-        const participantAwayAction = round.actions.find((a: any) => a.actionType === 'predict_away' && a.agentId === p.agentId);
-        const ph = participantHomeAction?.payload as number | undefined;
-        const pa = participantAwayAction?.payload as number | undefined;
-        if (ph === undefined || pa === undefined) continue;
+        const action = round.actions.find(a => a.agentId === p.agentId);
+        if (!action) continue;
 
-        const isCorrect = ph === correctScore.home && pa === correctScore.away;
-        const newScore = isCorrect ? 3 : 0;
+        const isCorrect = action.actionType === correctOutcome;
+        let newScore = 0;
+        if (isCorrect) {
+          let odds = 2.0;
+          if (action.payload) {
+            try { const ap = JSON.parse(action.payload); odds = ap.odds || 2.0; } catch {}
+          }
+          newScore = Math.round(odds * 100);
+        }
+
         const oldScore = p.score || 0;
-
         if (newScore !== oldScore) {
           await tx.matchParticipant.update({
             where: { id: p.id },
             data: { score: newScore },
           });
-          if (p.agent.scoreboard) {
-            await tx.scoreboard.update({
-              where: { agentId: p.agentId },
-              data: { totalScore: { increment: newScore - oldScore } },
-            });
-          }
+          await tx.scoreboard.updateMany({
+            where: { agentId: p.agentId },
+            data: { totalScore: { increment: newScore - oldScore } },
+          });
           rescored++;
         }
       }
@@ -681,25 +644,28 @@ async function runScoresFixOnce(): Promise<void> {
         data: {
           matchId: match.id,
           visibility: 'public',
-          eventType: 'match_finished',
-          message: `Score corrected. Final: ${payload.homeTeam} ${correctScore.home} - ${correctScore.away} ${payload.awayTeam} (${newPayload.result.toUpperCase()}).`,
+          eventType: 'score_corrected',
+          message: `Score corrected: ${payload.homeTeam} ${correctScore.home} - ${correctScore.away} ${payload.awayTeam}`,
           payload: JSON.stringify({
             corrected: true,
-            oldScore: payload.score,
+            fixtureId: payload.fixtureId,
             newScore: { home: correctScore.home, away: correctScore.away },
-            fixtureId,
           }),
         },
       });
     });
 
     updated++;
-    console.log(`[WorldCup] Fixed match ${match.matchSeed}: ${payload.homeTeam} ${correctScore.home}-${correctScore.away} ${payload.awayTeam} (fixture ${fixtureId})`);
+    console.log(`[WorldCup] Fixed: ${payload.homeTeam} ${correctScore.home}-${correctScore.away} ${payload.awayTeam} (fixture ${payload.fixtureId})`);
   }
 
-  await prisma.appSetting.create({ data: { key: SCORES_FIX_KEY, value: 'done' } });
-  console.log(`[WorldCup] Scores fix done. Updated ${updated} matches, rescored ${rescored} predictions.`);
-  console.log(`[WorldCup] Skipped: noFixtureId=${skippedNoFixtureId} noScore=${skippedNoScore} alreadyCorrect=${skippedAlreadyCorrect} noPrediction=${skippedNoPrediction}`);
+  await prisma.appSetting.upsert({
+    where: { key: SCORES_FIX_KEY },
+    update: { value: 'done' },
+    create: { key: SCORES_FIX_KEY, value: 'done' },
+  });
+
+  console.log(`[WorldCup] Scores fix done. Updated ${updated} matches, rescored ${rescored} predictions. Skipped ${skipped}.`);
 }
 
 // Background sync and settlement loop
