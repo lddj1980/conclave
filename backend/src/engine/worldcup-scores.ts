@@ -18,8 +18,9 @@ interface WorldCup26Match {
   away_team_name_en: string;
 }
 
-function normalizeTeam(name: string): string {
-  return name
+function normalizeTeam(name: string | null | undefined): string {
+  if (!name) return '';
+  return String(name)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9 ]/g, '')
     .toLowerCase()
