@@ -496,8 +496,13 @@ export async function settlePredictionMatches(fixtures: WorldCupFixture[]) {
         let participantScore = 0;
 
         if (predictionAction && predictionAction.actionType === actualOutcome) {
-          const actionPayload = JSON.parse(predictionAction.payload || '{}');
-          const odds = actionPayload.odds || 2.0;
+          let odds = 2.0;
+          if (predictionAction.payload) {
+            try {
+              const actionPayload = JSON.parse(predictionAction.payload);
+              odds = actionPayload.odds || 2.0;
+            } catch (e) {}
+          }
           participantScore = Math.round(odds * 100);
         }
 
