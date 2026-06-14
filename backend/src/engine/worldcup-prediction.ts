@@ -1,12 +1,14 @@
 import prisma from '../db.js';
 import { calculateElo } from './prisoners-dilemma.js';
+import { getWorldCupSchedule, getTodaysFixtures, getPastFixtures } from '../data/worldcup-2026-schedule.js';
+import { fetchScoresForFixtures } from './worldcup-scores.js';
 
 export interface WorldCupFixture {
   fixtureId: number;
   homeTeam: string;
   awayTeam: string;
   kickoffTime: Date;
-  status: 'NS' | 'FT' | 'CANC'; // Not Started, Finished, Cancelled
+  status: 'NS' | 'FT' | 'CANC';
   homeOdds: number;
   drawOdds: number;
   awayOdds: number;
@@ -84,334 +86,127 @@ export async function subscribeAgentToGame(agentId: string) {
   return sub;
 }
 
-// US2: Fetch fixtures (mocked or via api-football.com)
-// US2: Fetch fixtures (mocked or via api-football.com)
-// US2: Fetch fixtures (mocked or via api-football.com)
-function getMockFixtures(): WorldCupFixture[] {
-  const legacyFixtures: WorldCupFixture[] = [
-    {
-      fixtureId: 1001,
-      homeTeam: 'Qatar',
-      awayTeam: 'Switzerland',
-      kickoffTime: new Date('2026-06-13T18:00:00.000Z'),
-      status: 'FT' as const,
-      homeOdds: 3.50,
-      drawOdds: 3.20,
-      awayOdds: 2.10,
-      score: { home: 1, away: 2 }
-    },
-    {
-      fixtureId: 1002,
-      homeTeam: 'Brazil',
-      awayTeam: 'Morocco',
-      kickoffTime: new Date('2026-06-13T21:00:00.000Z'),
-      status: 'FT' as const,
-      homeOdds: 1.40,
-      drawOdds: 4.50,
-      awayOdds: 7.50,
-      score: { home: 2, away: 0 }
-    },
-    {
-      fixtureId: 1003,
-      homeTeam: 'Haiti',
-      awayTeam: 'Scotland',
-      kickoffTime: new Date('2026-06-14T00:00:00.000Z'),
-      status: 'FT' as const,
-      homeOdds: 5.50,
-      drawOdds: 3.80,
-      awayOdds: 1.60,
-      score: { home: 1, away: 1 }
-    },
-    {
-      fixtureId: 1004,
-      homeTeam: 'Australia',
-      awayTeam: 'Türkiye',
-      kickoffTime: new Date('2026-06-14T03:00:00.000Z'),
-      status: 'FT' as const,
-      homeOdds: 2.80,
-      drawOdds: 3.10,
-      awayOdds: 2.50,
-      score: { home: 0, away: 2 }
-    }
-  ];
+// US2: Fetch today's fixtures + past fixtures for settlement from static schedule
+// Uses free public API for real scores, falls back to deterministic
+export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
+  const schedule = getWorldCupSchedule();
+  const todayIds = new Set(getTodaysFixtures(schedule).map(f => f.id));
+  const pastFixtures = getPastFixtures(schedule);
+  const pastIds = new Set(pastFixtures.map(f => f.id));
+  const allIds = new Set([...todayIds, ...pastIds]);
 
-  const fixtures: WorldCupFixture[] = [];
-  const now = new Date();
+  const scores = await fetchScoresForFixtures(pastFixtures);
 
-  // Helper to generate mock fixtures for a given date
-  const getMockFixturesForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0].replace(/-/g, ''); // e.g., "20260614"
-    const dateVal = parseInt(dateStr, 10);
-    
-    const baseTime = new Date(date);
-    baseTime.setUTCHours(18, 0, 0, 0);
-
-    const fixturesInfo = [
-      { index: 1, home: 'Qatar', away: 'Switzerland', offsetHours: 0, homeOdds: 3.50, drawOdds: 3.20, awayOdds: 2.10 },
-      { index: 2, home: 'Brazil', away: 'Morocco', offsetHours: 3, homeOdds: 1.40, drawOdds: 4.50, awayOdds: 7.50 },
-      { index: 3, home: 'Haiti', away: 'Scotland', offsetHours: 6, homeOdds: 5.50, drawOdds: 3.80, awayOdds: 1.60 },
-      { index: 4, home: 'Australia', away: 'Türkiye', offsetHours: 9, homeOdds: 2.80, drawOdds: 3.10, awayOdds: 2.50 }
-    ];
-
-    return fixturesInfo.map(f => {
-      const fixtureId = dateVal * 10 + f.index;
-      const kickoffTime = new Date(baseTime.getTime() + f.offsetHours * 60 * 60 * 1000);
-      
-      // Settle if now is past kickoff + 2 hours
-      const isFinished = now.getTime() >= kickoffTime.getTime() + 2 * 60 * 60 * 1000;
-      
+  return schedule
+    .filter(f => allIds.has(f.id))
+    .map(f => {
+      const isPast = pastIds.has(f.id);
+      const score = isPast ? scores.get(f.id) : undefined;
       return {
-        fixtureId,
-        homeTeam: f.home,
-        awayTeam: f.away,
-        kickoffTime,
-        status: isFinished ? ('FT' as const) : ('NS' as const),
-        homeOdds: f.homeOdds,
-        drawOdds: f.drawOdds,
-        awayOdds: f.awayOdds,
-        score: isFinished ? {
-          home: (fixtureId % 3),
-          away: (fixtureId % 2)
-        } : undefined
+        fixtureId: f.id,
+        homeTeam: f.homeTeam,
+        awayTeam: f.awayTeam,
+        kickoffTime: new Date(f.kickoff),
+        status: isPast ? ('FT' as const) : ('NS' as const),
+        homeOdds: 2.0,
+        drawOdds: 3.0,
+        awayOdds: 2.0,
+        score: score ? { home: score.home, away: score.away } : undefined,
       };
     });
-  };
-
-  // Generate mock fixtures for yesterday and today
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const today = new Date();
-
-  fixtures.push(...getMockFixturesForDate(yesterday));
-  fixtures.push(...getMockFixturesForDate(today));
-  fixtures.push(...legacyFixtures);
-
-  return fixtures;
-}
-
-// US2: Fetch fixtures (mocked or via api-football.com)
-export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
-  const apiKey = process.env.API_FOOTBALL_KEY;
-  if (!apiKey) {
-    return getMockFixtures();
-  }
-
-  // Real integration with api-football.com for yesterday and today
-  try {
-    const dates = [
-      new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0], // yesterday
-      new Date().toISOString().split('T')[0] // today
-    ];
-
-    const fixturesMap = new Map<number, WorldCupFixture>();
-
-    for (const dateStr of dates) {
-      const response = await fetch(
-        `https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=${dateStr}`,
-        {
-          headers: {
-            'x-apisports-key': apiKey,
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'v3.football.api-sports.io',
-          },
-        }
-      );
-      const data = await response.json();
-      const fixturesData = data.response || [];
-
-      for (const f of fixturesData) {
-        fixturesMap.set(f.fixture.id, {
-          fixtureId: f.fixture.id,
-          homeTeam: f.teams.home.name,
-          awayTeam: f.teams.away.name,
-          kickoffTime: new Date(f.fixture.date),
-          status: f.fixture.status.short,
-          homeOdds: 2.0,
-          drawOdds: 3.0,
-          awayOdds: 2.0,
-          score: f.fixture.status.short === 'FT' ? {
-            home: f.goals.home,
-            away: f.goals.away,
-          } : undefined,
-        });
-      }
-    }
-
-    const fixtures = Array.from(fixturesMap.values());
-    
-    // Append legacy fixtures so they get settled even if running in real mode in production
-    const legacyFixtures: WorldCupFixture[] = [
-      {
-        fixtureId: 1001,
-        homeTeam: 'Qatar',
-        awayTeam: 'Switzerland',
-        kickoffTime: new Date('2026-06-13T18:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 3.50,
-        drawOdds: 3.20,
-        awayOdds: 2.10,
-        score: { home: 1, away: 2 }
-      },
-      {
-        fixtureId: 1002,
-        homeTeam: 'Brazil',
-        awayTeam: 'Morocco',
-        kickoffTime: new Date('2026-06-13T21:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 1.40,
-        drawOdds: 4.50,
-        awayOdds: 7.50,
-        score: { home: 2, away: 0 }
-      },
-      {
-        fixtureId: 1003,
-        homeTeam: 'Haiti',
-        awayTeam: 'Scotland',
-        kickoffTime: new Date('2026-06-14T00:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 5.50,
-        drawOdds: 3.80,
-        awayOdds: 1.60,
-        score: { home: 1, away: 1 }
-      },
-      {
-        fixtureId: 1004,
-        homeTeam: 'Australia',
-        awayTeam: 'Türkiye',
-        kickoffTime: new Date('2026-06-14T03:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 2.80,
-        drawOdds: 3.10,
-        awayOdds: 2.50,
-        score: { home: 0, away: 2 }
-      }
-    ];
-    fixtures.push(...legacyFixtures);
-
-    return fixtures;
-  } catch (error) {
-    console.error('Failed to fetch from API-Football, falling back to mocks:', error);
-    return getMockFixtures(); // fallback to static mock function directly (no infinite loop)
-  }
 }
 
 // US2: Create Match and Round sessions for daily fixtures
 export async function createDailyMatches(fixtures: WorldCupFixture[]) {
-  // Get all subscribed agents
   const subscriptions = await prisma.agentGameSubscription.findMany({
     where: { gameKey: 'world_cup_prediction' },
     include: { agent: true },
   });
   const subscribedAgents = subscriptions.map((s) => s.agent);
 
+  // Pre-fetch existing in_progress matches for dedup by team name
+  const existingMatches = await prisma.match.findMany({
+    where: { gameType: 'world_cup_prediction' },
+    include: { rounds: { where: { roundNumber: 1 }, select: { payload: true } } },
+  });
+
   const createdMatches = [];
 
   for (const f of fixtures) {
-    // Check if match already exists for this fixture ID
+    if (f.status === 'FT' || f.score || new Date() >= f.kickoffTime) continue;
+
     const matchSeed = `worldcup-fixture-${f.fixtureId}`;
-    let match = await prisma.match.findFirst({
-      where: {
+
+    // Dedup by matchSeed or by team names (existing match from different fixture ID)
+    const exists = existingMatches.some(m =>
+      m.matchSeed === matchSeed ||
+      (() => {
+        try {
+          const p = JSON.parse(m.rounds[0]?.payload || '{}');
+          return p.homeTeam === f.homeTeam && p.awayTeam === f.awayTeam;
+        } catch { return false; }
+      })()
+    );
+    if (exists) continue;
+
+    const homeOdds = f.homeOdds || 2.0;
+    const drawOdds = f.drawOdds || 3.0;
+    const awayOdds = f.awayOdds || 2.0;
+
+    const match = await prisma.match.create({
+      data: {
         gameType: 'world_cup_prediction',
         matchSeed: matchSeed,
+        status: 'in_progress',
+        maxPlayers: 1000,
+        totalRounds: 1,
+        currentRound: 1,
+        createdBy: 'WorldCupHouseBot',
       },
     });
 
-    if (!match) {
-      // Skip creating matches for fixtures that have already started or finished
-      if (f.status === 'FT' || f.score || new Date() >= f.kickoffTime) {
-        continue;
-      }
+    const roundPayload = {
+      fixtureId: f.fixtureId,
+      homeTeam: f.homeTeam,
+      awayTeam: f.awayTeam,
+      kickoffTime: f.kickoffTime.toISOString(),
+      odds: {
+        home: homeOdds,
+        draw: drawOdds,
+        away: awayOdds,
+      },
+    };
 
-      let homeOdds = f.homeOdds;
-      let drawOdds = f.drawOdds;
-      let awayOdds = f.awayOdds;
+    await prisma.round.create({
+      data: {
+        matchId: match.id,
+        roundNumber: 1,
+        status: 'waiting_for_actions',
+        payload: JSON.stringify(roundPayload),
+      },
+    });
 
-      // Fetch actual odds only when creating the match
-      const apiKey = process.env.API_FOOTBALL_KEY;
-      if (apiKey && f.fixtureId >= 1000) {
-        try {
-          const oddsRes = await fetch(
-            `https://v3.football.api-sports.io/odds?fixture=${f.fixtureId}`,
-            {
-              headers: {
-                'x-apisports-key': apiKey,
-                'x-rapidapi-key': apiKey,
-                'x-rapidapi-host': 'v3.football.api-sports.io',
-              },
-            }
-          );
-          const oddsData = await oddsRes.json();
-          const bookmakers = oddsData.response?.[0]?.bookmakers || [];
-          const standardBookmaker = bookmakers[0]?.bets?.[0]?.values || [];
-
-          const homeVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Home')?.odValue || '2.0');
-          const drawVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Draw')?.odValue || '3.0');
-          const awayVal = parseFloat(standardBookmaker.find((v: any) => v.value === 'Away')?.odValue || '2.0');
-
-          if (!isNaN(homeVal)) homeOdds = homeVal;
-          if (!isNaN(drawVal)) drawOdds = drawVal;
-          if (!isNaN(awayVal)) awayOdds = awayVal;
-        } catch (e) {
-          console.error(`Failed to fetch odds for fixture ${f.fixtureId}:`, e);
-        }
-      }
-
-      match = await prisma.match.create({
-        data: {
-          gameType: 'world_cup_prediction',
-          matchSeed: matchSeed,
-          status: 'in_progress', // immediately in progress for predictions
-          maxPlayers: 1000,
-          totalRounds: 1,
-          currentRound: 1,
-          createdBy: 'WorldCupHouseBot',
-        },
-      });
-
-      // Create Round 1
-      const roundPayload = {
-        fixtureId: f.fixtureId,
-        homeTeam: f.homeTeam,
-        awayTeam: f.awayTeam,
-        kickoffTime: f.kickoffTime.toISOString(),
-        odds: {
-          home: homeOdds,
-          draw: drawOdds,
-          away: awayOdds,
-        },
-      };
-
-      await prisma.round.create({
+    for (const agent of subscribedAgents) {
+      await prisma.matchParticipant.create({
         data: {
           matchId: match.id,
-          roundNumber: 1,
-          status: 'waiting_for_actions',
-          payload: JSON.stringify(roundPayload),
+          agentId: agent.id,
+          score: 0,
+          status: 'joined',
         },
       });
-
-      // Add all subscribed agents as participants
-      for (const agent of subscribedAgents) {
-        await prisma.matchParticipant.create({
-          data: {
-            matchId: match.id,
-            agentId: agent.id,
-            score: 0,
-            status: 'joined',
-          },
-        });
-      }
-
-      await prisma.matchLog.create({
-        data: {
-          matchId: match.id,
-          eventType: 'match_started',
-          message: `Prediction Match created for ${f.homeTeam} vs ${f.awayTeam}. Odds: H:${homeOdds} D:${drawOdds} A:${awayOdds}`,
-          payload: JSON.stringify(roundPayload),
-        },
-      });
-
-      createdMatches.push(match);
     }
+
+    await prisma.matchLog.create({
+      data: {
+        matchId: match.id,
+        eventType: 'match_started',
+        message: `Prediction Match created for ${f.homeTeam} vs ${f.awayTeam}. Odds: H:${homeOdds} D:${drawOdds} A:${awayOdds}`,
+        payload: JSON.stringify(roundPayload),
+      },
+    });
+
+    createdMatches.push(match);
   }
 
   return createdMatches;
