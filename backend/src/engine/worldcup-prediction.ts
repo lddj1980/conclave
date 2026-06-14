@@ -206,6 +206,7 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
         `https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=${dateStr}`,
         {
           headers: {
+            'x-apisports-key': apiKey,
             'x-rapidapi-key': apiKey,
             'x-rapidapi-host': 'v3.football.api-sports.io',
           },
@@ -282,6 +283,7 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
             `https://v3.football.api-sports.io/odds?fixture=${f.fixtureId}`,
             {
               headers: {
+                'x-apisports-key': apiKey,
                 'x-rapidapi-key': apiKey,
                 'x-rapidapi-host': 'v3.football.api-sports.io',
               },
