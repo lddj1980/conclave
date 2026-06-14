@@ -543,8 +543,53 @@ async function cleanupStaleMatches(): Promise<number> {
 async function runScoresFixOnce(): Promise<void> {
   const existing = await prisma.appSetting.findUnique({ where: { key: SCORES_FIX_KEY } });
   if (existing) {
-    console.log('[WorldCup] Scores fix already run (AppSetting exists), skipping.');
-    return;
+    // Check if any matches still have incorrect scores
+    const schedule = getWorldCupSchedule();
+    const now = new Date();
+    const pastFixtures = schedule.filter(f => new Date(f.kickoff) <= now);
+    const scores = await fetchScoresForFixtures(pastFixtures);
+
+    const dbMatches = await prisma.match.findMany({
+      where: { gameType: 'world_cup_prediction', status: 'finished' },
+      include: {
+        rounds: { where: { roundNumber: 1 }, include: { actions: true } },
+        participants: { include: { agent: { include: { scoreboard: true } } } },
+      },
+    });
+
+    let needsFix = false;
+    for (const match of dbMatches) {
+      const round = match.rounds[0];
+      if (!round || !round.payload) continue;
+
+      let payload: any;
+      try { payload = JSON.parse(round.payload); } catch { continue; }
+
+      const fixtureId = payload.fixtureId;
+      if (!fixtureId) continue;
+
+      const correctScore = scores.get(fixtureId);
+      if (!correctScore) continue;
+
+      const homeAction = round.actions.find((a: any) => a.actionType === 'predict_home');
+      const awayAction = round.actions.find((a: any) => a.actionType === 'predict_away');
+      const predHome = homeAction?.payload as number | undefined;
+      const predAway = awayAction?.payload as number | undefined;
+      if (predHome === undefined || predAway === undefined) continue;
+
+      const wasCorrect = predHome === correctScore.home && predAway === correctScore.away;
+      if (!wasCorrect) {
+        needsFix = true;
+        break;
+      }
+    }
+
+    if (!needsFix) {
+      console.log('[WorldCup] Scores fix already run and all matches have correct scores, skipping.');
+      return;
+    }
+
+    console.log('[WorldCup] Found incorrect scores from previous fix run, re-running fix...');
   }
 
   console.log('[WorldCup] Running one-time scores fix for past matches...');
