@@ -18,6 +18,19 @@ interface WorldCup26Match {
   away_team_name_en: string;
 }
 
+function normalizeTeam(name: string): string {
+  return name
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function teamMatch(apiName: string, localName: string): boolean {
+  return normalizeTeam(apiName) === normalizeTeam(localName);
+}
+
 export async function fetchScoresForFixtures(
   fixtures: ScheduledFixture[]
 ): Promise<Map<number, { home: number; away: number }>> {
@@ -31,7 +44,9 @@ export async function fetchScoresForFixtures(
     const data: { games: WorldCup26Match[] } = await res.json();
 
     for (const f of fixtures) {
-      const match = data.games.find(m => parseInt(m.id) === f.id);
+      const match = data.games.find(
+        m => teamMatch(m.home_team_name_en, f.homeTeam) && teamMatch(m.away_team_name_en, f.awayTeam)
+      );
       if (match && match.finished === 'TRUE') {
         const homeScore = parseInt(match.home_score);
         const awayScore = parseInt(match.away_score);
