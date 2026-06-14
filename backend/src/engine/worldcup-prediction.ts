@@ -259,6 +259,11 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
     });
 
     if (!match) {
+      // Skip creating matches for fixtures that have already started or finished
+      if (f.status === 'FT' || f.score || new Date() >= f.kickoffTime) {
+        continue;
+      }
+
       let homeOdds = f.homeOdds;
       let drawOdds = f.drawOdds;
       let awayOdds = f.awayOdds;
