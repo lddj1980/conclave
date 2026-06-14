@@ -86,7 +86,55 @@ export async function subscribeAgentToGame(agentId: string) {
 
 // US2: Fetch fixtures (mocked or via api-football.com)
 // US2: Fetch fixtures (mocked or via api-football.com)
+// US2: Fetch fixtures (mocked or via api-football.com)
 export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
+  const legacyFixtures: WorldCupFixture[] = [
+    {
+      fixtureId: 1001,
+      homeTeam: 'Qatar',
+      awayTeam: 'Switzerland',
+      kickoffTime: new Date('2026-06-13T18:00:00.000Z'),
+      status: 'FT' as const,
+      homeOdds: 3.50,
+      drawOdds: 3.20,
+      awayOdds: 2.10,
+      score: { home: 1, away: 2 }
+    },
+    {
+      fixtureId: 1002,
+      homeTeam: 'Brazil',
+      awayTeam: 'Morocco',
+      kickoffTime: new Date('2026-06-13T21:00:00.000Z'),
+      status: 'FT' as const,
+      homeOdds: 1.40,
+      drawOdds: 4.50,
+      awayOdds: 7.50,
+      score: { home: 2, away: 0 }
+    },
+    {
+      fixtureId: 1003,
+      homeTeam: 'Haiti',
+      awayTeam: 'Scotland',
+      kickoffTime: new Date('2026-06-14T00:00:00.000Z'),
+      status: 'FT' as const,
+      homeOdds: 5.50,
+      drawOdds: 3.80,
+      awayOdds: 1.60,
+      score: { home: 1, away: 1 }
+    },
+    {
+      fixtureId: 1004,
+      homeTeam: 'Australia',
+      awayTeam: 'Türkiye',
+      kickoffTime: new Date('2026-06-14T03:00:00.000Z'),
+      status: 'FT' as const,
+      homeOdds: 2.80,
+      drawOdds: 3.10,
+      awayOdds: 2.50,
+      score: { home: 0, away: 2 }
+    }
+  ];
+
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) {
     const fixtures: WorldCupFixture[] = [];
@@ -139,52 +187,6 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
     fixtures.push(...getMockFixturesForDate(today));
 
     // Append legacy fixtures to ensure old matches can be settled
-    const legacyFixtures: WorldCupFixture[] = [
-      {
-        fixtureId: 1001,
-        homeTeam: 'Qatar',
-        awayTeam: 'Switzerland',
-        kickoffTime: new Date('2026-06-13T18:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 3.50,
-        drawOdds: 3.20,
-        awayOdds: 2.10,
-        score: { home: 1, away: 2 }
-      },
-      {
-        fixtureId: 1002,
-        homeTeam: 'Brazil',
-        awayTeam: 'Morocco',
-        kickoffTime: new Date('2026-06-13T21:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 1.40,
-        drawOdds: 4.50,
-        awayOdds: 7.50,
-        score: { home: 2, away: 0 }
-      },
-      {
-        fixtureId: 1003,
-        homeTeam: 'Haiti',
-        awayTeam: 'Scotland',
-        kickoffTime: new Date('2026-06-14T00:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 5.50,
-        drawOdds: 3.80,
-        awayOdds: 1.60,
-        score: { home: 1, away: 1 }
-      },
-      {
-        fixtureId: 1004,
-        homeTeam: 'Australia',
-        awayTeam: 'Türkiye',
-        kickoffTime: new Date('2026-06-14T03:00:00.000Z'),
-        status: 'FT' as const,
-        homeOdds: 2.80,
-        drawOdds: 3.10,
-        awayOdds: 2.50,
-        score: { home: 0, away: 2 }
-      }
-    ];
     fixtures.push(...legacyFixtures);
 
     return fixtures;
@@ -230,7 +232,11 @@ export async function fetchDailyFixturesAndOdds(): Promise<WorldCupFixture[]> {
       }
     }
 
-    return Array.from(fixturesMap.values());
+    const fixtures = Array.from(fixturesMap.values());
+    // Append legacy fixtures so they get settled even if running in real mode in production
+    fixtures.push(...legacyFixtures);
+
+    return fixtures;
   } catch (error) {
     console.error('Failed to fetch from API-Football, falling back to mocks:', error);
     return fetchDailyFixturesAndOdds(); // fallback
