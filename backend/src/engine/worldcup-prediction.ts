@@ -5,6 +5,17 @@ import { fetchScoresForFixtures } from './worldcup-scores.js';
 
 const SCORES_FIX_KEY = 'worldcup-scores-fixed-v1';
 
+function normalizeName(name: string): string {
+  return String(name ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .toLowerCase().trim();
+}
+
+function teamsMatch(a: string, b: string): boolean {
+  return normalizeName(a) === normalizeName(b);
+}
+
 export interface WorldCupFixture {
   fixtureId: number;
   homeTeam: string;
@@ -145,7 +156,7 @@ export async function createDailyMatches(fixtures: WorldCupFixture[]) {
       (() => {
         try {
           const p = JSON.parse(m.rounds[0]?.payload || '{}');
-          return p.homeTeam === f.homeTeam && p.awayTeam === f.awayTeam;
+          return teamsMatch(p.homeTeam, f.homeTeam) && teamsMatch(p.awayTeam, f.awayTeam);
         } catch { return false; }
       })()
     );
@@ -321,7 +332,7 @@ export async function settlePredictionMatches(fixtures: WorldCupFixture[]) {
         if (!payload) return false;
         try {
           const data = JSON.parse(payload);
-          return data.homeTeam === f.homeTeam && data.awayTeam === f.awayTeam;
+          return teamsMatch(data.homeTeam, f.homeTeam) && teamsMatch(data.awayTeam, f.awayTeam);
         } catch { return false; }
       });
     }
@@ -518,7 +529,7 @@ async function autoSettleOrphanMatches(): Promise<number> {
 // This cleans up stale data when the schedule is updated.
 async function cleanupStaleMatches(): Promise<number> {
   const schedule = getWorldCupSchedule();
-  const validPairs = new Set(schedule.map(f => `${f.homeTeam}|${f.awayTeam}`));
+  const validPairs = new Set(schedule.map(f => `${normalizeName(f.homeTeam)}|${normalizeName(f.awayTeam)}`));
 
   const stale = await prisma.match.findMany({
     where: { gameType: 'world_cup_prediction' },
@@ -531,7 +542,7 @@ async function cleanupStaleMatches(): Promise<number> {
     if (!payload) continue;
     let parsed: any;
     try { parsed = JSON.parse(payload); } catch { continue; }
-    const key = `${parsed.homeTeam}|${parsed.awayTeam}`;
+    const key = `${normalizeName(parsed.homeTeam)}|${normalizeName(parsed.awayTeam)}`;
     if (!validPairs.has(key)) {
       await prisma.match.delete({ where: { id: m.id } });
       deleted++;
@@ -541,9 +552,13 @@ async function cleanupStaleMatches(): Promise<number> {
 }
 
 async function runScoresFixOnce(): Promise<void> {
-  const existing = await prisma.appSetting.findUnique({ where: { key: SCORES_FIX_KEY } });
-
   const schedule = getWorldCupSchedule();
+
+  const fixtureByTeams = new Map<string, number>();
+  for (const f of schedule) {
+    fixtureByTeams.set(`${normalizeName(f.homeTeam)}|${normalizeName(f.awayTeam)}`, f.id);
+  }
+
   const now = new Date();
   const pastFixtures = schedule.filter(f => new Date(f.kickoff) <= now);
   const scores = await fetchScoresForFixtures(pastFixtures);
@@ -556,32 +571,6 @@ async function runScoresFixOnce(): Promise<void> {
     },
   });
 
-  let needsFix = false;
-  for (const match of dbMatches) {
-    const round = match.rounds[0];
-    if (!round?.payload) continue;
-    let payload: any;
-    try { payload = JSON.parse(round.payload); } catch { continue; }
-    if (!payload.fixtureId) continue;
-    const correctScore = scores.get(payload.fixtureId);
-    if (!correctScore) continue;
-    if (payload.score?.home === correctScore.home && payload.score?.away === correctScore.away) continue;
-    needsFix = true;
-    break;
-  }
-
-  if (existing && !needsFix) {
-    console.log('[WorldCup] Scores fix already applied, all scores correct. Skipping.');
-    return;
-  }
-
-  if (!needsFix) {
-    console.log('[WorldCup] No matches need score correction. Skipping.');
-    return;
-  }
-
-  console.log('[WorldCup] Running scores fix...');
-
   let updated = 0;
   let rescored = 0;
   let skipped = 0;
@@ -591,8 +580,17 @@ async function runScoresFixOnce(): Promise<void> {
     if (!round?.payload) { skipped++; continue; }
     let payload: any;
     try { payload = JSON.parse(round.payload); } catch { skipped++; continue; }
-    if (!payload.fixtureId) { skipped++; continue; }
-    const correctScore = scores.get(payload.fixtureId);
+    const home = payload.homeTeam, away = payload.awayTeam;
+    if (!home || !away) { skipped++; continue; }
+
+    // resolve fixtureId: from payload or from team names against schedule
+    let fixtureId = payload.fixtureId;
+    if (!fixtureId) {
+      fixtureId = fixtureByTeams.get(`${normalizeName(home)}|${normalizeName(away)}`);
+    }
+    if (!fixtureId) { skipped++; continue; }
+
+    const correctScore = scores.get(fixtureId);
     if (!correctScore) { skipped++; continue; }
     if (payload.score?.home === correctScore.home && payload.score?.away === correctScore.away) { skipped++; continue; }
 
@@ -602,6 +600,7 @@ async function runScoresFixOnce(): Promise<void> {
 
     const newPayload = {
       ...payload,
+      fixtureId,
       score: { home: correctScore.home, away: correctScore.away },
       result: correctOutcome,
     };
@@ -645,10 +644,10 @@ async function runScoresFixOnce(): Promise<void> {
           matchId: match.id,
           visibility: 'public',
           eventType: 'score_corrected',
-          message: `Score corrected: ${payload.homeTeam} ${correctScore.home} - ${correctScore.away} ${payload.awayTeam}`,
+          message: `Score corrected: ${home} ${correctScore.home} - ${correctScore.away} ${away}`,
           payload: JSON.stringify({
             corrected: true,
-            fixtureId: payload.fixtureId,
+            fixtureId,
             newScore: { home: correctScore.home, away: correctScore.away },
           }),
         },
@@ -656,7 +655,7 @@ async function runScoresFixOnce(): Promise<void> {
     });
 
     updated++;
-    console.log(`[WorldCup] Fixed: ${payload.homeTeam} ${correctScore.home}-${correctScore.away} ${payload.awayTeam} (fixture ${payload.fixtureId})`);
+    console.log(`[WorldCup] Fixed: ${home} ${correctScore.home}-${correctScore.away} ${away} (fixture ${fixtureId})`);
   }
 
   await prisma.appSetting.upsert({
@@ -675,8 +674,8 @@ export function runWorldCupPredictionLoop() {
   // Run once immediately on start
   void (async () => {
     try {
-      await runScoresFixOnce();
       const cleaned = await cleanupStaleMatches();
+      await runScoresFixOnce();
       if (cleaned > 0) {
         console.log(`[WorldCup] Cleaned ${cleaned} stale matches from outdated schedule.`);
       }
