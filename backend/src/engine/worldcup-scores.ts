@@ -50,34 +50,129 @@ function teamMatch(apiName: string, localName: string): boolean {
   return teamNamesMatch(String(apiName ?? ''), localName);
 }
 
-export async function fetchScoresForFixtures(
-  fixtures: ScheduledFixture[]
-): Promise<Map<number, { home: number; away: number }>> {
-  const result = new Map<number, { home: number; away: number }>();
+interface ScoreEntry { home: number; away: number }
 
+let scoresCache: Map<number, ScoreEntry> | null = null;
+let lastCacheTime = 0;
+const CACHE_TTL = 10 * 60 * 1000;
+
+async function fetchScoresFromWorldCupIR(
+  fixtures: ScheduledFixture[]
+): Promise<Map<number, ScoreEntry> | null> {
   try {
     const res = await fetch('https://worldcup26.ir/get/games', {
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: { games: WorldCup26Match[] } = await res.json();
 
-    for (const f of fixtures) {
-      const match = data.games.find(
-        m => teamMatch(m.home_team_name_en, f.homeTeam) && teamMatch(m.away_team_name_en, f.awayTeam)
+    const apiByTeams = new Map<string, ScoreEntry>();
+    for (const m of data.games) {
+      if (m.finished !== 'TRUE') continue;
+      const home = parseInt(m.home_score);
+      const away = parseInt(m.away_score);
+      if (isNaN(home) || isNaN(away)) continue;
+      apiByTeams.set(
+        `${normalizeTeam(m.home_team_name_en)}|${normalizeTeam(m.away_team_name_en)}`,
+        { home, away }
       );
-      if (match && match.finished === 'TRUE') {
-        const homeScore = parseInt(match.home_score);
-        const awayScore = parseInt(match.away_score);
-        if (!isNaN(homeScore) && !isNaN(awayScore)) {
-          result.set(f.id, { home: homeScore, away: awayScore });
+    }
+
+    const result = new Map<number, ScoreEntry>();
+    for (const f of fixtures) {
+      const key = `${normalizeTeam(f.homeTeam)}|${normalizeTeam(f.awayTeam)}`;
+      const entry = apiByTeams.get(key);
+      if (entry) result.set(f.id, entry);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchScoresFromESPN(
+  fixtures: ScheduledFixture[]
+): Promise<Map<number, ScoreEntry> | null> {
+  try {
+    const dates = new Set<string>();
+    for (const f of fixtures) {
+      const d = new Date(f.kickoff);
+      dates.add(
+        `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
+      );
+    }
+
+    const result = new Map<number, ScoreEntry>();
+
+    for (const dateStr of dates) {
+      const res = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${dateStr}`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      for (const event of data.events || []) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        if (comp.status?.type?.completed !== true) continue;
+
+        const homeTeam = comp.competitors?.find((c: any) => c.homeAway === 'home');
+        const awayTeam = comp.competitors?.find((c: any) => c.homeAway === 'away');
+        if (!homeTeam || !awayTeam) continue;
+
+        const homeName = homeTeam.team?.displayName || homeTeam.team?.name;
+        const awayName = awayTeam.team?.displayName || awayTeam.team?.name;
+        if (!homeName || !awayName) continue;
+
+        const homeScore = parseInt(homeTeam.score);
+        const awayScore = parseInt(awayTeam.score);
+        if (isNaN(homeScore) || isNaN(awayScore)) continue;
+
+        for (const f of fixtures) {
+          if (result.has(f.id)) continue;
+          if (teamNamesMatch(homeName, f.homeTeam) && teamNamesMatch(awayName, f.awayTeam)) {
+            result.set(f.id, { home: homeScore, away: awayScore });
+          }
         }
       }
     }
-  } catch (err) {
-    console.warn('[WorldCup] worldcup26.ir API failed, using deterministic fallback:', (err as Error)?.message);
+
+    return result.size > 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchScoresForFixtures(
+  fixtures: ScheduledFixture[]
+): Promise<Map<number, { home: number; away: number }>> {
+  let apiResult = await fetchScoresFromWorldCupIR(fixtures);
+
+  if (!apiResult) {
+    console.warn('[WorldCup] worldcup26.ir failed, retrying in 3s...');
+    await new Promise(r => setTimeout(r, 3000));
+    apiResult = await fetchScoresFromWorldCupIR(fixtures);
   }
 
+  if (!apiResult) {
+    console.warn('[WorldCup] worldcup26.ir unavailable, trying ESPN API...');
+    apiResult = await fetchScoresFromESPN(fixtures);
+  }
+
+  if (apiResult) {
+    scoresCache = apiResult;
+    lastCacheTime = Date.now();
+  } else if (scoresCache && Date.now() - lastCacheTime < CACHE_TTL) {
+    console.warn('[WorldCup] Both APIs failed. Using cached scores.');
+    apiResult = scoresCache;
+  } else {
+    console.warn('[WorldCup] All score sources failed. No matches will be settled with real scores.');
+  }
+
+  const result = new Map(apiResult ?? []);
+
+  // Only use deterministic fallback for fixtures NOT covered by any source
   for (const f of fixtures) {
     if (!result.has(f.id)) {
       result.set(f.id, deterministicScore(f.id));

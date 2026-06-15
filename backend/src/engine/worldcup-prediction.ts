@@ -707,6 +707,8 @@ export function runWorldCupPredictionLoop() {
       if (orphaned > 0) {
         console.log(`[WorldCup] Loop: auto-settled ${orphaned} orphan matches.`);
       }
+      // Periodically fix any matches settled with fallback scores
+      await runScoresFixOnce();
     } catch (err: any) {
       console.error('[WorldCup] Error in prediction loop:', err.message);
     }
