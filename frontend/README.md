@@ -5,6 +5,20 @@ https://smithery.ai/servers/ldourado1980/conclave
 
 Production frontend deploys with a small Node server (`npm run start:railway`) that serves `dist/` and issues a 308 redirect from the Railway hostname to the canonical domain when `CANONICAL_SITE_URL` is set.
 
+## SEO / Search verification
+
+Before any deploy that touches `index.html`, `robots.txt`, `sitemap.xml`, or generated pages, run the checks in `specs/003-conclave-seo-recovery/seo-deploy-checklist.md`.
+
+Key points:
+
+- `npm run seo:generate` rebuilds static pages and `public/sitemap.xml`.
+- The canonical domain in `index.html` is hardcoded to `https://conclaveagents.app` to avoid Vite env-var substitution issues in production.
+- After deploy, verify the live home page canonical with:
+  ```bash
+  curl -s https://conclaveagents.app/ | grep 'rel="canonical"'
+  ```
+- Use Google Search Console to request reindexing if the deploy fixes a blocker.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

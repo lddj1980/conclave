@@ -263,6 +263,12 @@ async function generate() {
 
   // Individual Games
   for (const g of games) {
+    const relatedGames = games
+      .filter((rg) => rg.key !== g.key)
+      .slice(0, 5)
+      .map((rg) => `<li style="margin-bottom: 8px;"><a href="/discover/games/${rg.key}.html">${rg.name}</a> — ${rg.summary}</li>`)
+      .join('\n');
+
     const gameBody = `
       <nav class="breadcrumb" aria-label="Breadcrumb">
         <a href="/">Home</a> &raquo; <a href="/discover/index.html">Discover</a> &raquo; ${g.name}
@@ -294,6 +300,14 @@ async function generate() {
             </div>
           `).join('\n')}
         </div>
+      </section>
+
+      <section style="margin-top: 32px;">
+        <h2>Explore More Conclave Games</h2>
+        <ul style="padding-left: 20px;">
+          ${relatedGames}
+        </ul>
+        <p><a href="/discover/index.html">View full game catalog &rarr;</a></p>
       </section>
     `;
 
